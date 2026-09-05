@@ -8,6 +8,8 @@ import AuraBackground from './components/AuraBackground.vue';
 import HomePage from './components/pages/HomePage.vue';
 import InstancesPage from './components/pages/InstancesPage.vue';
 import SettingsPage from './components/pages/SettingsPage.vue';
+import DownloadPage from './components/pages/DownloadPage.vue';
+import ModsPage from './components/pages/ModsPage.vue';
 import PlaceholderPage from './components/pages/PlaceholderPage.vue';
 import LaunchModal from './components/LaunchModal.vue';
 import NewInstanceModal from './components/NewInstanceModal.vue';
@@ -16,6 +18,7 @@ import {
   INITIAL_INSTANCES,
   INITIAL_ACCOUNTS,
   MOCK_PLUGINS,
+  MOCK_MODS,
   DEFAULT_SETTINGS,
 } from './data/mockData';
 import type {
@@ -23,6 +26,7 @@ import type {
   MinecraftInstance,
   Account,
   LauncherPlugin,
+  ModItem,
   LauncherSettings,
 } from './types/launcher';
 
@@ -32,6 +36,7 @@ const instances = ref<MinecraftInstance[]>(INITIAL_INSTANCES);
 const currentInstance = ref<MinecraftInstance>(INITIAL_INSTANCES[0]);
 const accounts = ref<Account[]>(INITIAL_ACCOUNTS);
 const plugins = ref<LauncherPlugin[]>(MOCK_PLUGINS);
+const mods = ref<ModItem[]>(MOCK_MODS);
 const settings = ref<LauncherSettings>({ ...DEFAULT_SETTINGS });
 
 const isLaunching = ref(false);
@@ -124,6 +129,22 @@ function openFolder(instance: MinecraftInstance) {
   showToast(`正在打开目录: ${instance.name}`);
 }
 
+function toggleMod(id: string) {
+  mods.value = mods.value.map((m) => (m.id === id ? { ...m, enabled: !m.enabled } : m));
+  const target = mods.value.find((m) => m.id === id);
+  showToast(target ? (target.enabled ? `已激活模组: ${target.name}` : `已停用模组: ${target.name}`) : '模组状态已更新');
+}
+
+function installMod(id: string) {
+  const target = mods.value.find((m) => m.id === id);
+  mods.value = mods.value.map((m) => (m.id === id ? { ...m, installed: true, enabled: true } : m));
+  showToast(target ? `已安装并激活模组: ${target.name}` : '模组已安装');
+}
+
+function openModsFolder() {
+  showToast(`正在打开 mods 文件夹: ${currentInstance.value.name}`);
+}
+
 function selectAccount(account: Account) {
   accounts.value = accounts.value.map((a) => ({ ...a, isActive: a.id === account.id }));
   showToast(`已切换账户: ${account.username}`);
@@ -147,6 +168,7 @@ function deleteAccount(id: string) {
 const pageTitles: Record<NavTab, string> = {
   home: '主页',
   instances: '实例列表',
+  mods: '模组管理',
   download: '下载',
   plugins: '启动器插件',
   settings: '设置',
@@ -206,6 +228,19 @@ onMounted(animatePageSwitch);
             @launch-instance="handleLaunchGame"
             @navigate="activeTab = $event"
             @show-toast="showToast"
+          />
+          <DownloadPage
+            v-else-if="activeTab === 'download'"
+            @create-instance="createInstance"
+            @show-toast="showToast"
+          />
+          <ModsPage
+            v-else-if="activeTab === 'mods'"
+            :current-instance="currentInstance"
+            :mods="mods"
+            @toggle-mod="toggleMod"
+            @install-mod="installMod"
+            @open-mods-folder="openModsFolder"
           />
           <SettingsPage
             v-else-if="activeTab === 'settings'"

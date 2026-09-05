@@ -2,6 +2,7 @@
 import {
   House,
   FolderOpen,
+  Blocks,
   Download,
   Puzzle,
   Settings,
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 const gameTabs: { id: NavTab; label: string; icon: unknown }[] = [
   { id: 'home', label: '主页', icon: House },
   { id: 'instances', label: '实例列表', icon: FolderOpen },
+  { id: 'mods', label: '模组管理', icon: Blocks },
 ];
 
 const contentTabs: { id: NavTab; label: string; icon: unknown }[] = [

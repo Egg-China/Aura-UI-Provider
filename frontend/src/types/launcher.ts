@@ -1,4 +1,4 @@
-export type NavTab = 'home' | 'instances' | 'download' | 'plugins' | 'settings' | 'multiplayer' | 'console';
+export type NavTab = 'home' | 'instances' | 'mods' | 'download' | 'plugins' | 'settings' | 'multiplayer' | 'console';
 
 export type ModLoader = 'Vanilla' | 'Fabric' | 'Forge' | 'NeoForge' | 'Quilt';
 
