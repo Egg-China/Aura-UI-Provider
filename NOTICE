@@ -1,0 +1,12 @@
+Aura UI Provider
+Copyright 2026 Aura Launcher contributors
+
+This product includes software rewritten from the unpublished AuraUI React
+prototype (desktop design prototype for the Aura Launcher Modern UI). The
+Vue 3 implementation is a fresh Apache-2.0 codebase; visual design tokens and
+layout concepts originate from that prototype.
+
+This product includes software developed by the HMCL Contributors
+(https://github.com/HMCL-dev/HMCL) under GPLv3, used through the
+Aura Launcher GPL lineage only on the JVM side; this repository contains no
+HMCL source code.

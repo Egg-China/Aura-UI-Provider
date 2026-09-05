@@ -1,0 +1,401 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    border-color: #2d2f34;
+  }
+
+  body {
+    background-color: #f1f3f5;
+    color: #1f2937;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow-x: hidden;
+  }
+
+  /* Minimal flat scrollbar */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #33363c;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #464a52;
+  }
+}
+
+/* ==========================================================================
+   Modern Flat Bedrock (OreUI) Panels & Elements (Dark Mode Default)
+   ========================================================================== */
+.mc-panel {
+  background-color: #1e2023;
+  border: 1px solid #2d2f34;
+  border-radius: 6px;
+}
+
+.mc-card {
+  background-color: #1f2124;
+  border: 1px solid #2d2f34;
+  border-radius: 6px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.mc-card:hover {
+  background-color: #26282d;
+  border-color: #3e4249;
+}
+.mc-card-active {
+  background-color: #24262b;
+  border: 1px solid #2ea44f;
+}
+
+/* Modern Flat Bedrock Buttons */
+.mc-btn-green {
+  background-color: #2ea44f;
+  color: #ffffff;
+  font-weight: 600;
+  border: 1px solid #36b75a;
+  border-radius: 6px;
+  transition: background-color 0.15s ease, transform 0.08s ease;
+}
+.mc-btn-green:hover:not(:disabled) {
+  background-color: #34b558;
+}
+.mc-btn-green:active:not(:disabled) {
+  background-color: #279044;
+  transform: scale(0.98);
+}
+.mc-btn-green:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mc-btn-grey {
+  background-color: #282a2e;
+  border: 1px solid #383b40;
+  color: #d1d5db;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
+}
+.mc-btn-grey:hover:not(:disabled) {
+  background-color: #31343a;
+  border-color: #484b52;
+  color: #ffffff;
+}
+.mc-btn-grey:active:not(:disabled) {
+  background-color: #222427;
+  transform: scale(0.98);
+}
+
+.mc-btn-subtle {
+  background-color: transparent;
+  border: 1px solid transparent;
+  color: #9ca3af;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+.mc-btn-subtle:hover {
+  background-color: #282a2e;
+  color: #ffffff;
+}
+
+/* Flat Toggle Switch */
+.mc-toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background-color: #33363c;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.mc-toggle.active {
+  background-color: #2ea44f;
+}
+.mc-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background-color: #ffffff;
+  border-radius: 9999px;
+  transition: transform 0.2s ease;
+}
+.mc-toggle.active .mc-toggle-thumb {
+  transform: translateX(18px);
+}
+
+/* Flat Range Slider */
+input[type=range].mc-slider {
+  -webkit-appearance: none;
+  background: #282a2e;
+  height: 6px;
+  border-radius: 9999px;
+}
+input[type=range].mc-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: #2ea44f;
+  border: 2px solid #ffffff;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+input[type=range].mc-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* ==========================================================================
+   PURE WHITE / LIGHT THEME (纯白浅色模式 - 鲜亮浅绿调色体系)
+   ========================================================================== */
+.theme-light {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+
+.theme-light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+.theme-light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Base Light Green Accents in Light Mode */
+.theme-light .mc-btn-green,
+.theme-light [class*="bg-[#2ea44f]"] {
+  background-color: #22c55e !important;
+  border-color: #16a34a !important;
+  color: #ffffff !important;
+}
+.theme-light .mc-btn-green:hover:not(:disabled),
+.theme-light [class*="bg-[#2ea44f]"]:hover {
+  background-color: #16a34a !important;
+}
+
+.theme-light .text-\[\#2ea44f\],
+.theme-light .text-\[\#34b558\],
+.theme-light .text-emerald-400 {
+  color: #16a34a !important;
+}
+
+.theme-light .border-l-\[\#2ea44f\],
+.theme-light .border-\[\#2ea44f\] {
+  border-color: #22c55e !important;
+}
+
+/* Header & Titlebar */
+.theme-light header {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+.theme-light header span {
+  color: #0f172a !important;
+}
+.theme-light header button {
+  color: #64748b !important;
+}
+.theme-light header button:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+/* Sidebar */
+.theme-light aside {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+.theme-light aside .text-slate-400,
+.theme-light aside .text-slate-500 {
+  color: #64748b !important;
+}
+.theme-light aside .text-white {
+  color: #0f172a !important;
+}
+.theme-light aside .text-slate-300 {
+  color: #334155 !important;
+}
+.theme-light aside button {
+  color: #475569 !important;
+}
+.theme-light aside button:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+.theme-light aside [class*="bg-[#1e2126]"] {
+  background-color: #ffffff !important;
+  border-left-color: #22c55e !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+  color: #0f172a !important;
+}
+.theme-light aside [class*="bg-[#1c1e22]"] {
+  background-color: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Main Workspace */
+.theme-light main {
+  background-color: #f8fafc !important;
+}
+
+/* Panels & Cards */
+.theme-light .mc-panel {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+.theme-light .mc-card {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+}
+.theme-light .mc-card:hover {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+.theme-light .mc-card-active {
+  background-color: #f0fdf4 !important;
+  border-color: #22c55e !important;
+}
+
+/* Buttons */
+.theme-light .mc-btn-grey {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+.theme-light .mc-btn-grey:hover:not(:disabled) {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+.theme-light .mc-btn-subtle:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+/* Inputs, Selects & Forms */
+.theme-light input,
+.theme-light select,
+.theme-light textarea {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+.theme-light input::placeholder {
+  color: #94a3b8 !important;
+}
+.theme-light input:focus,
+.theme-light select:focus,
+.theme-light textarea:focus {
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 1px #22c55e !important;
+}
+
+/* Toggles & Sliders with Light Green */
+.theme-light .mc-toggle {
+  background-color: #cbd5e1 !important;
+}
+.theme-light .mc-toggle.active {
+  background-color: #22c55e !important;
+}
+.theme-light input[type=range].mc-slider {
+  background: #e2e8f0 !important;
+}
+.theme-light input[type=range].mc-slider::-webkit-slider-thumb {
+  background: #22c55e !important;
+}
+
+/* Text Colors */
+.theme-light .text-white {
+  color: #0f172a !important;
+}
+.theme-light .mc-btn-green .text-white,
+.theme-light [class*="bg-[#2ea44f]"] span,
+.theme-light [class*="bg-[#2ea44f]"] {
+  color: #ffffff !important;
+}
+.theme-light .text-slate-200 {
+  color: #1e293b !important;
+}
+.theme-light .text-slate-300 {
+  color: #334155 !important;
+}
+.theme-light .text-slate-400 {
+  color: #64748b !important;
+}
+.theme-light .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* All Dark Container Overrides in Light Mode */
+.theme-light [class*="bg-[#141517]"],
+.theme-light [class*="bg-[#161719]"],
+.theme-light [class*="bg-[#18191a]"],
+.theme-light [class*="bg-[#191b1f]"],
+.theme-light [class*="bg-[#1b1d22]"],
+.theme-light [class*="bg-[#111214]"],
+.theme-light [class*="bg-[#101113]"],
+.theme-light [class*="bg-[#121315]"],
+.theme-light [class*="bg-[#18191c]"],
+.theme-light [class*="bg-[#1e2023]"],
+.theme-light [class*="bg-[#1f2124]"],
+.theme-light [class*="bg-[#1f2125]"],
+.theme-light [class*="bg-[#202226]"],
+.theme-light [class*="bg-[#282a2e]"],
+.theme-light [class*="bg-[#272a2f]"] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+.theme-light [class*="hover:bg-[#1a1c1f]"]:hover,
+.theme-light [class*="hover:bg-[#181a1e]"]:hover,
+.theme-light [class*="hover:bg-[#191b1f]"]:hover,
+.theme-light [class*="hover:bg-[#1c1e22]"]:hover,
+.theme-light [class*="hover:bg-[#202227]"]:hover,
+.theme-light [class*="hover:bg-[#23252a]"]:hover,
+.theme-light [class*="hover:bg-[#272a2f]"]:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* Border Overrides */
+.theme-light [class*="border-[#24262b]"],
+.theme-light [class*="border-[#2b2d32]"],
+.theme-light [class*="border-[#2d2f34]"],
+.theme-light [class*="border-[#272a30]"],
+.theme-light [class*="border-[#2c2f35]"],
+.theme-light [class*="border-[#222428]"],
+.theme-light [class*="border-[#27292f]"],
+.theme-light [class*="border-[#2e3137]"],
+.theme-light [class*="border-[#26282e]"] {
+  border-color: #e2e8f0 !important;
+}
+
+/* Active Highlight Cards in Light Mode (Soft Fresh Light Green Wash) */
+.theme-light [class*="bg-[#18211b]"],
+.theme-light [class*="bg-[#1b221d]"],
+.theme-light [class*="bg-[#1a261e]"],
+.theme-light [class*="bg-[#222c24]"],
+.theme-light [class*="bg-[#1b241e]"],
+.theme-light [class*="bg-[#1e2920]"],
+.theme-light [class*="bg-[#1a2e20]"],
+.theme-light [class*="bg-[#1e2920]"] {
+  background-color: #f0fdf4 !important;
+  border-color: #4ade80 !important;
+}
+.theme-light [class*="bg-[#18211b]"] .text-white,
+.theme-light [class*="bg-[#1b221d]"] .text-white,
+.theme-light [class*="bg-[#1a261e]"] .text-white,
+.theme-light [class*="bg-[#1e2920]"] .text-white {
+  color: #0f172a !important;
+}
