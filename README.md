@@ -44,3 +44,40 @@ dev.aura.modern-ui.npl
 The packaged archive has been verified end-to-end against Aura Launcher:
 plugin discovery, SHA-256 verified extraction, permission gating, and a
 complete supervised protocol session all succeed.
+
+
+## Release matrix
+
+Supported packages are built for `windows-x64`, `linux-x64`, `macos-x64`,
+and `macos-arm64`. Tag a release (`v*`) or run the *Release Packages*
+workflow manually; every platform uploads its `.npl` plus a SHA-256 sidecar,
+and a combined `SHA256SUMS.txt` manifest is attached as the
+`release-checksums` artifact.
+
+Platforms without maintained builders — arm32 Linux, riscv64, loongarch64,
+FreeBSD, and HarmonyOS — are intentionally not distributed. Build them
+yourself with the toolchain below; the protocol is pure data, so any
+platform that can compile Rust and Qt can host it.
+
+## Self-build guide
+
+```bash
+# 1. Frontend (Node 20+)
+cd frontend
+npm ci
+npm run build
+
+# 2. Native provider (Rust stable)
+cd ..
+cargo build --release --manifest-path provider/Cargo.toml
+
+# 3. Package the launcher plugin
+python scripts/package_npl.py --platform windows-x64
+# on Linux/macOS: --platform linux-x64 | macos-x64 | macos-arm64
+```
+
+Linux additionally needs `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`,
+`libayatana-appindicator3-dev`, and `librsvg2-dev`. The packaged
+`.npl` installs through Aura Launcher's plugin store or the plugins
+directory; restart the launcher and select *Aura Modern UI* under
+Settings → UI Frontend.

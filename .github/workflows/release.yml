@@ -1,0 +1,98 @@
+name: Release Packages
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x64
+            target: x86_64-pc-windows-msvc
+            binary: aura-ui-provider.exe
+          - os: ubuntu-22.04
+            platform: linux-x64
+            target: x86_64-unknown-linux-gnu
+            binary: aura-ui-provider
+          - os: macos-14
+            platform: macos-arm64
+            target: aarch64-apple-darwin
+            binary: aura-ui-provider
+          - os: macos-15
+            platform: macos-x64
+            target: x86_64-apple-darwin
+            binary: aura-ui-provider
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend bundle
+        working-directory: frontend
+        run: npm run build
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          key: ${{ matrix.target }}
+
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Build provider release binary
+        run: cargo build --release --target ${{ matrix.target }} --manifest-path provider/Cargo.toml
+
+      - name: Package npl archive
+        run: python scripts/package_npl.py --platform ${{ matrix.platform }} --binary target/${{ matrix.target }}/release/${{ matrix.binary }} --output dist/dev.aura.modern-ui.${{ matrix.platform }}.npl
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev.aura.modern-ui.${{ matrix.platform }}
+          path: |
+            dist/dev.aura.modern-ui.${{ matrix.platform }}.npl
+            dist/dev.aura.modern-ui.${{ matrix.platform }}.npl.sha256
+          if-no-files-found: error
+
+  checksums:
+    name: Aggregate SHA-256 manifest
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Build combined checksum manifest
+        working-directory: dist
+        run: cat *.npl.sha256 > SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-checksums
+          path: dist/SHA256SUMS.txt
+          if-no-files-found: error
