@@ -262,6 +262,17 @@ export const DEFAULT_SETTINGS: LauncherSettings = {
   themeAuraColor: '#2ea44f',
   hardwareAcceleration: true,
   enableDiscordRPC: true,
+
+  // 5. HMCL 对等扩展（W4）
+  versionIsolation: 'isolated',
+  fileVerification: true,
+  gameEnvVars: '',
+  proxyUsername: '',
+  proxyPassword: '',
+  selectedUiFrontend: 'javafx',
+  backgroundStyle: 'particles',
+  uiFontScale: 100,
+  aprilFools: false,
 };
 
 export const AVAILABLE_MC_VERSIONS = [

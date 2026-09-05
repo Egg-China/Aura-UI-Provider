@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar.vue';
 import AuraBackground from './components/AuraBackground.vue';
 import HomePage from './components/pages/HomePage.vue';
 import InstancesPage from './components/pages/InstancesPage.vue';
+import SettingsPage from './components/pages/SettingsPage.vue';
 import PlaceholderPage from './components/pages/PlaceholderPage.vue';
 import LaunchModal from './components/LaunchModal.vue';
 import NewInstanceModal from './components/NewInstanceModal.vue';
@@ -70,6 +71,10 @@ function handleLaunchGame(target: MinecraftInstance = currentInstance.value) {
   window.setTimeout(() => {
     isLaunching.value = false;
   }, 3600);
+}
+
+function updateSettings(patch: Partial<LauncherSettings>) {
+  settings.value = { ...settings.value, ...patch };
 }
 
 function toggleColorMode() {
@@ -200,6 +205,12 @@ onMounted(animatePageSwitch);
             @open-folder="openFolder"
             @launch-instance="handleLaunchGame"
             @navigate="activeTab = $event"
+            @show-toast="showToast"
+          />
+          <SettingsPage
+            v-else-if="activeTab === 'settings'"
+            :settings="settings"
+            @update-settings="updateSettings"
             @show-toast="showToast"
           />
           <PlaceholderPage

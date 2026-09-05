@@ -96,7 +96,7 @@ export interface LauncherSettings {
   updateChannel: 'stable' | 'dev';
   acceptPreview: boolean;
   autoCheckUpdate: boolean;
-  language: 'zh_CN' | 'zh_TW' | 'en_US';
+  language: 'zh_CN' | 'zh_TW' | 'en_US' | 'ja_JP' | 'ru_RU' | 'de_DE' | 'fr_FR' | 'es_ES';
   proxyType: 'none' | 'system' | 'http' | 'socks5';
   proxyHost: string;
   proxyPort: number;
@@ -107,4 +107,15 @@ export interface LauncherSettings {
   themeAuraColor: string;
   hardwareAcceleration: boolean;
   enableDiscordRPC: boolean;
+
+  // 5. HMCL 对等扩展（W4 补全，W8 接 core.settings 协议）
+  versionIsolation: 'global' | 'isolated';
+  fileVerification: boolean;
+  gameEnvVars: string;
+  proxyUsername: string;
+  proxyPassword: string;
+  selectedUiFrontend: 'javafx' | 'modern-ui';
+  backgroundStyle: 'particles' | 'gradient' | 'plain';
+  uiFontScale: number;
+  aprilFools: boolean;
 }
