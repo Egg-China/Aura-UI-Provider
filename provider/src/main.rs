@@ -95,6 +95,7 @@ fn main() -> ExitCode {
 
     let state = Arc::new(Mutex::new(UiState::default()));
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
+    let page_ready_tx = ready_tx.clone();
     let (incoming_tx, incoming_rx) = std::sync::mpsc::channel::<Incoming>();
 
     let protocol_state = Arc::clone(&state);
@@ -113,6 +114,13 @@ fn main() -> ExitCode {
     });
 
     match tauri::Builder::default()
+        .on_page_load(move |_, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                // The native page-load event is the reliable cross-platform readiness
+                // signal; the webview IPC call remains a redundant fallback.
+                let _ = page_ready_tx.send(());
+            }
+        })
         .manage(SharedUiState(state))
         .manage(ReadySignal(ready_tx))
         .manage(RequestChannel(incoming_tx))

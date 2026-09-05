@@ -207,9 +207,18 @@ const pageTitles: Record<NavTab, string> = {
   console: '日志与控制台',
 };
 
-const isTauri = '__TAURI_INTERNALS__' in (globalThis as Record<string, unknown>);
+let isTauri = false;
 
 const navTabs: NavTab[] = ['home', 'instances', 'mods', 'download', 'plugins', 'settings', 'multiplayer', 'console'];
+
+async function waitForTauri(timeoutMilliseconds = 5000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (!('__TAURI_INTERNALS__' in (globalThis as Record<string, unknown>))) {
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  return true;
+}
 
 function hydrateInstances(raw: unknown): MinecraftInstance[] {
   if (!Array.isArray(raw)) return [];
@@ -305,7 +314,8 @@ async function runPluginContribution(contribution: PluginContribution) {
 
 onMounted(async () => {
   animatePageSwitch();
-  if (!isTauri) return;
+  if (!(await waitForTauri())) return;
+  isTauri = true;
 
   try {
     const { invoke } = await import('@tauri-apps/api/core');
