@@ -343,11 +343,14 @@ def run(binary: Path, timeout: float) -> None:
     session = Session(binary, timeout)
     try:
         run_session(session)
-    except BaseException:
+    except BaseException as failure:
+        if session.diagnostics:
+            print("provider stderr:", file=sys.stderr)
+            print("\n".join(session.diagnostics), file=sys.stderr)
         if session.process.poll() is None:
             session.process.kill()
             session.process.wait(timeout=5)
-        raise
+        raise failure
 
 
 def run_session(session: Session) -> None:
