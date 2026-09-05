@@ -10,3 +10,9 @@ This product includes software developed by the HMCL Contributors
 (https://github.com/HMCL-dev/HMCL) under GPLv3, used through the
 Aura Launcher GPL lineage only on the JVM side; this repository contains no
 HMCL source code.
+
+The original AuraUI React prototype at `C:\Users\ACX\Desktop\AuraUI` is an
+archived, read-only design reference. It carries no license, is not part of
+this repository's distribution, and no source code from it is copied into
+the Apache-2.0 Vue implementation; only independently reimplemented design
+concepts and rewritten UI text are shared.
