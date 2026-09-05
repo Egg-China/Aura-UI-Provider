@@ -6,6 +6,17 @@ defineProps<{
   colorMode: 'dark' | 'light';
 }>();
 
+const isTauri = '__TAURI_INTERNALS__' in (globalThis as Record<string, unknown>);
+
+async function controlWindow(action: 'minimize' | 'toggle-maximize' | 'close') {
+  if (!isTauri) return;
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  const current = getCurrentWindow();
+  if (action === 'minimize') await current.minimize();
+  else if (action === 'toggle-maximize') await current.toggleMaximize();
+  else await current.close();
+}
+
 const emit = defineEmits<{
   (event: 'toggle-sidebar'): void;
   (event: 'toggle-color-mode'): void;
@@ -16,6 +27,7 @@ const emit = defineEmits<{
 <template>
   <header
     class="h-10 w-full flex items-center justify-between px-3 bg-[#121315] border-b border-[#222428] select-none z-50 transition-colors"
+    :data-tauri-drag-region="isTauri ? '' : undefined"
   >
     <div class="flex items-center gap-2.5">
       <button
@@ -52,21 +64,21 @@ const emit = defineEmits<{
       <button
         class="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-[#202226] transition-colors cursor-pointer"
         title="最小化"
-        @click="emit('notify', '窗口最小化')"
+        @click="isTauri ? controlWindow('minimize') : emit('notify', '窗口最小化')"
       >
         <Minus class="w-3.5 h-3.5" />
       </button>
       <button
         class="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-[#202226] transition-colors cursor-pointer"
         title="最大化"
-        @click="emit('notify', '切换窗口大小')"
+        @click="isTauri ? controlWindow('toggle-maximize') : emit('notify', '切换窗口大小')"
       >
         <Square class="w-3 h-3" />
       </button>
       <button
         class="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-rose-700 transition-colors cursor-pointer"
         title="关闭"
-        @click="emit('notify', '关闭窗口')"
+        @click="isTauri ? controlWindow('close') : emit('notify', '关闭窗口')"
       >
         <X class="w-3.5 h-3.5" />
       </button>

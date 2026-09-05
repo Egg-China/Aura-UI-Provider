@@ -6,4 +6,7 @@ description = "Aura Launcher isolated native UI frontend speaking the aura.ui.v1
 license = "Apache-2.0"
 
 [dependencies]
+tauri = { version = "2", features = [] }
 
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

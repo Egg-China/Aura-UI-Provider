@@ -199,7 +199,32 @@ const pageTitles: Record<NavTab, string> = {
   console: '日志与控制台',
 };
 
-onMounted(animatePageSwitch);
+const isTauri = '__TAURI_INTERNALS__' in (globalThis as Record<string, unknown>);
+
+onMounted(async () => {
+  animatePageSwitch();
+  if (!isTauri) return;
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('notify_ready');
+    showToast('已连接 Aura 启动器协议桥');
+
+    const eventTimer = window.setInterval(async () => {
+      try {
+        const events = await invoke<Array<{ kind: string; payload: unknown }>>('drain_events');
+        for (const event of events) {
+          if (event.kind === 'navigate') showToast(`启动器请求导航: ${JSON.stringify(event.payload)}`);
+          else if (event.kind === 'notify') showToast(`启动器通知: ${JSON.stringify(event.payload)}`);
+        }
+      } catch {
+        window.clearInterval(eventTimer);
+      }
+    }, 600);
+  } catch (error) {
+    showToast(`协议桥初始化失败: ${String(error)}`);
+  }
+});
 </script>
 
 <template>

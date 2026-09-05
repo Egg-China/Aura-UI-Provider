@@ -297,3 +297,60 @@ mod tests {
         assert!(decode(&encoded).is_err());
     }
 }
+
+/// Renders the value as compact JSON for the Tauri IPC bridge.
+///
+/// The wire codec above stays dependency-free; this renderer keeps that
+/// property by escaping JSON strings manually instead of pulling serde in.
+impl Value {
+    pub fn to_json(&self) -> String {
+        match self {
+            Value::Null => "null".to_string(),
+            Value::Boolean(value) => value.to_string(),
+            Value::Integer(value) => value.to_string(),
+            Value::Float(value) => {
+                if value.is_finite() {
+                    value.to_string()
+                } else {
+                    "null".to_string()
+                }
+            }
+            Value::String(value) => escape_json_string(value),
+            Value::Bytes(value) => format!("\"{} bytes\"", value.len()),
+            Value::Array(values) => {
+                let items: Vec<String> = values.iter().map(Value::to_json).collect();
+                format!("[{}]", items.join(","))
+            }
+            Value::Map(entries) => {
+                let items: Vec<String> = entries
+                    .iter()
+                    .map(|(key, value)| format!("{}:{}", escape_json_string(key), value.to_json()))
+                    .collect();
+                format!("{{{}}}", items.join(","))
+            }
+        }
+    }
+}
+
+/// Escapes one string using the minimal JSON mandatory escape set.
+fn escape_json_string(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{08}' => out.push_str("\\b"),
+            '\u{0c}' => out.push_str("\\f"),
+            character if (character as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", character as u32));
+            }
+            character => out.push(character),
+        }
+    }
+    out.push('"');
+    out
+}
