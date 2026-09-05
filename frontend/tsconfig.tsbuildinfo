@@ -1,1 +1,0 @@
-{"root":["./src/main.ts","./src/data/mockdata.ts","./src/types/launcher.ts","./src/app.vue","./src/components/aurabackground.vue","./src/components/launchmodal.vue","./src/components/loadericon.vue","./src/components/sidebar.vue","./src/components/titlebar.vue","./src/components/pages/homepage.vue","./src/components/pages/placeholderpage.vue"],"version":"5.9.3"}
