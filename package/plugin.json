@@ -8,7 +8,10 @@
   "permissions": [
     "launcher-ui-provider",
     "native-code",
-    "process"
+    "process",
+    "account",
+    "game-launch",
+    "launcher-ui"
   ],
   "requiredPermissions": [
     "launcher-ui-provider",
