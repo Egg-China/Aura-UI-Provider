@@ -399,3 +399,7 @@ input[type=range].mc-slider::-webkit-slider-thumb:hover {
 .theme-light [class*="bg-[#1e2920]"] .text-white {
   color: #0f172a !important;
 }
+
+.pixelated {
+  image-rendering: pixelated;
+}

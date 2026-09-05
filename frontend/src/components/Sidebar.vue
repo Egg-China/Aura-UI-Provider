@@ -8,17 +8,19 @@ import {
   Users2,
   Terminal,
 } from 'lucide-vue-next';
-import type { NavTab } from '../types/launcher';
+import type { Account, NavTab } from '../types/launcher';
 
 defineProps<{
   activeTab: NavTab;
   isCollapsed: boolean;
   pluginCount: number;
+  currentAccount: Account;
 }>();
 
 const emit = defineEmits<{
   (event: 'update:activeTab', tab: NavTab): void;
   (event: 'collapse'): void;
+  (event: 'open-accounts'): void;
 }>();
 
 const gameTabs: { id: NavTab; label: string; icon: unknown }[] = [
@@ -76,12 +78,42 @@ const generalTabs: { id: NavTab; label: string; icon: unknown }[] = [
       </div>
     </div>
 
-    <div v-if="!isCollapsed" class="pt-2 border-t border-[#1e2024] text-[10px] text-slate-500 flex justify-between px-1">
-      <span>Aura Modern UI</span>
-      <span>W2</span>
+    <div v-if="!isCollapsed" class="pt-2 border-t border-[#1e2024] px-1.5 pb-1.5">
+      <button
+        class="w-full flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-[#1a1c20] transition-colors cursor-pointer text-left"
+        title="账户管理"
+        @click="emit('open-accounts')"
+      >
+        <img
+          :src="currentAccount.skinUrl"
+          :alt="currentAccount.username"
+          class="w-7 h-7 rounded pixelated bg-black/30 border border-white/10 shrink-0"
+          @error="($event.target as HTMLImageElement).style.display = 'none'"
+        />
+        <div class="min-w-0 flex-1">
+          <div class="text-[11px] font-semibold text-slate-200 truncate">{{ currentAccount.username }}</div>
+          <div class="text-[9px] text-slate-500">账户管理</div>
+        </div>
+      </button>
+      <div class="text-[10px] text-slate-500 flex justify-between px-1 pt-1.5">
+        <span>Aura Modern UI</span>
+        <span>W3</span>
+      </div>
     </div>
-    <div v-else class="pt-2 border-t border-[#1e2024] text-[10px] text-slate-500 text-center font-mono">
-      W2
+    <div v-else class="pt-2 border-t border-[#1e2024] pb-1.5 flex flex-col items-center gap-1.5">
+      <button
+        class="w-8 h-8 rounded-md overflow-hidden hover:ring-1 hover:ring-[#2ea44f] transition-all cursor-pointer shrink-0"
+        title="账户管理"
+        @click="emit('open-accounts')"
+      >
+        <img
+          :src="currentAccount.skinUrl"
+          :alt="currentAccount.username"
+          class="w-full h-full pixelated bg-black/30"
+          @error="($event.target as HTMLImageElement).style.display = 'none'"
+        />
+      </button>
+      <span class="text-[10px] text-slate-500 font-mono">W3</span>
     </div>
   </aside>
 </template>

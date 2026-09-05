@@ -6,8 +6,11 @@ import TitleBar from './components/TitleBar.vue';
 import Sidebar from './components/Sidebar.vue';
 import AuraBackground from './components/AuraBackground.vue';
 import HomePage from './components/pages/HomePage.vue';
+import InstancesPage from './components/pages/InstancesPage.vue';
 import PlaceholderPage from './components/pages/PlaceholderPage.vue';
 import LaunchModal from './components/LaunchModal.vue';
+import NewInstanceModal from './components/NewInstanceModal.vue';
+import AccountModal from './components/AccountModal.vue';
 import {
   INITIAL_INSTANCES,
   INITIAL_ACCOUNTS,
@@ -32,6 +35,8 @@ const settings = ref<LauncherSettings>({ ...DEFAULT_SETTINGS });
 
 const isLaunching = ref(false);
 const isLaunchModalOpen = ref(false);
+const isNewInstanceModalOpen = ref(false);
+const isAccountModalOpen = ref(false);
 const toastMessage = ref<string | null>(null);
 const mainViewRef = useTemplateRef<HTMLDivElement>('mainView');
 let toastTimer: number | undefined;
@@ -74,6 +79,66 @@ function toggleColorMode() {
   };
 }
 
+function createInstance(instance: MinecraftInstance) {
+  instances.value = [...instances.value, instance];
+  currentInstance.value = instance;
+  showToast(`已创建实例: ${instance.name}`);
+}
+
+function deleteInstance(id: string) {
+  const target = instances.value.find((i) => i.id === id);
+  instances.value = instances.value.filter((i) => i.id !== id);
+  if (currentInstance.value.id === id) {
+    currentInstance.value = instances.value[0] ?? currentInstance.value;
+  }
+  showToast(target ? `已删除实例: ${target.name}` : '实例已删除');
+}
+
+function duplicateInstance(instance: MinecraftInstance) {
+  const copy: MinecraftInstance = {
+    ...instance,
+    id: `inst-${Date.now()}`,
+    name: `${instance.name} (副本)`,
+    lastPlayed: '从未',
+    isFavorite: false,
+  };
+  instances.value = [...instances.value, copy];
+  showToast(`已克隆实例: ${copy.name}`);
+}
+
+function toggleFavorite(id: string) {
+  instances.value = instances.value.map((i) =>
+    i.id === id ? { ...i, isFavorite: !i.isFavorite } : i,
+  );
+  if (currentInstance.value.id === id) {
+    currentInstance.value = instances.value.find((i) => i.id === id) ?? currentInstance.value;
+  }
+}
+
+function openFolder(instance: MinecraftInstance) {
+  showToast(`正在打开目录: ${instance.name}`);
+}
+
+function selectAccount(account: Account) {
+  accounts.value = accounts.value.map((a) => ({ ...a, isActive: a.id === account.id }));
+  showToast(`已切换账户: ${account.username}`);
+}
+
+function addAccount(account: Account) {
+  accounts.value = accounts.value.map((a) => ({ ...a, isActive: false }));
+  accounts.value = [...accounts.value, account];
+  showToast(`已添加账户: ${account.username}`);
+}
+
+function deleteAccount(id: string) {
+  const remaining = accounts.value.filter((a) => a.id !== id);
+  if (remaining.length > 0 && !remaining.some((a) => a.isActive)) {
+    remaining[0] = { ...remaining[0], isActive: true };
+  }
+  accounts.value = remaining;
+  showToast('账户已移除');
+}
+
 const pageTitles: Record<NavTab, string> = {
   home: '主页',
   instances: '实例列表',
@@ -105,8 +170,10 @@ onMounted(animatePageSwitch);
         :active-tab="activeTab"
         :is-collapsed="isSidebarCollapsed"
         :plugin-count="plugins.filter((p) => p.enabled).length"
+        :current-account="accounts.find((a) => a.isActive) ?? accounts[0]"
         @update:active-tab="activeTab = $event"
         @collapse="isSidebarCollapsed = !isSidebarCollapsed"
+        @open-accounts="isAccountModalOpen = true"
       />
 
       <main class="relative flex-1 min-w-0 overflow-hidden">
@@ -120,6 +187,20 @@ onMounted(animatePageSwitch);
             :is-launching="isLaunching"
             @select-instance="currentInstance = $event"
             @launch="handleLaunchGame()"
+          />
+          <InstancesPage
+            v-else-if="activeTab === 'instances'"
+            :instances="instances"
+            :current-instance="currentInstance"
+            @select-instance="currentInstance = $event"
+            @delete-instance="deleteInstance"
+            @duplicate-instance="duplicateInstance"
+            @toggle-favorite="toggleFavorite"
+            @open-new-instance="isNewInstanceModalOpen = true"
+            @open-folder="openFolder"
+            @launch-instance="handleLaunchGame"
+            @navigate="activeTab = $event"
+            @show-toast="showToast"
           />
           <PlaceholderPage
             v-else
@@ -136,6 +217,22 @@ onMounted(animatePageSwitch);
       :instance="currentInstance"
       :account="accounts.find((a) => a.isActive) ?? accounts[0]"
       @close="isLaunchModalOpen = false"
+    />
+
+    <NewInstanceModal
+      :open="isNewInstanceModalOpen"
+      @close="isNewInstanceModalOpen = false"
+      @create-instance="createInstance"
+    />
+
+    <AccountModal
+      :open="isAccountModalOpen"
+      :accounts="accounts"
+      :current-account="accounts.find((a) => a.isActive) ?? accounts[0]"
+      @close="isAccountModalOpen = false"
+      @select-account="selectAccount"
+      @add-account="addAccount"
+      @delete-account="deleteAccount"
     />
 
     <transition
