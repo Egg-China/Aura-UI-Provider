@@ -10,6 +10,9 @@ import InstancesPage from './components/pages/InstancesPage.vue';
 import SettingsPage from './components/pages/SettingsPage.vue';
 import DownloadPage from './components/pages/DownloadPage.vue';
 import ModsPage from './components/pages/ModsPage.vue';
+import PluginsPage from './components/pages/PluginsPage.vue';
+import MultiplayerPage from './components/pages/MultiplayerPage.vue';
+import ConsolePage from './components/pages/ConsolePage.vue';
 import PlaceholderPage from './components/pages/PlaceholderPage.vue';
 import LaunchModal from './components/LaunchModal.vue';
 import NewInstanceModal from './components/NewInstanceModal.vue';
@@ -141,6 +144,26 @@ function installMod(id: string) {
   showToast(target ? `已安装并激活模组: ${target.name}` : '模组已安装');
 }
 
+function togglePlugin(id: string) {
+  plugins.value = plugins.value.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p));
+  const target = plugins.value.find((p) => p.id === id);
+  showToast(target ? (target.enabled ? `已启用插件: ${target.name}` : `已禁用插件: ${target.name}`) : '插件状态已更新');
+}
+
+function installPlugin(id: string) {
+  const target = plugins.value.find((p) => p.id === id);
+  plugins.value = plugins.value.map((p) => (p.id === id ? { ...p, installed: true, enabled: true, status: 'Running' } : p));
+  showToast(target ? `已安装插件: ${target.name}` : '插件已安装');
+}
+
+function uninstallPlugin(id: string) {
+  const target = plugins.value.find((p) => p.id === id);
+  plugins.value = plugins.value.map((p) =>
+    p.id === id ? { ...p, installed: false, enabled: false, status: 'Disabled' } : p,
+  );
+  showToast(target ? `已卸载插件: ${target.name}` : '插件已卸载');
+}
+
 function openModsFolder() {
   showToast(`正在打开 mods 文件夹: ${currentInstance.value.name}`);
 }
@@ -241,6 +264,24 @@ onMounted(animatePageSwitch);
             @toggle-mod="toggleMod"
             @install-mod="installMod"
             @open-mods-folder="openModsFolder"
+          />
+          <PluginsPage
+            v-else-if="activeTab === 'plugins'"
+            :plugins="plugins"
+            @toggle-plugin="togglePlugin"
+            @install-plugin="installPlugin"
+            @uninstall-plugin="uninstallPlugin"
+            @show-toast="showToast"
+          />
+          <MultiplayerPage
+            v-else-if="activeTab === 'multiplayer'"
+            @launch="handleLaunchGame()"
+            @show-toast="showToast"
+          />
+          <ConsolePage
+            v-else-if="activeTab === 'console'"
+            :instance-name="currentInstance.name"
+            @show-toast="showToast"
           />
           <SettingsPage
             v-else-if="activeTab === 'settings'"
