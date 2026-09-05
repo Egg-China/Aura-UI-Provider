@@ -10,18 +10,21 @@ import {
   Terminal,
 } from 'lucide-vue-next';
 import type { Account, NavTab } from '../types/launcher';
+import type { PluginContribution } from '../bridge';
 
 defineProps<{
   activeTab: NavTab;
   isCollapsed: boolean;
   pluginCount: number;
   currentAccount: Account;
+  contributions: PluginContribution[];
 }>();
 
 const emit = defineEmits<{
   (event: 'update:activeTab', tab: NavTab): void;
   (event: 'collapse'): void;
   (event: 'open-accounts'): void;
+  (event: 'plugin-contribution', contribution: PluginContribution): void;
 }>();
 
 const gameTabs: { id: NavTab; label: string; icon: unknown }[] = [
@@ -77,6 +80,30 @@ const generalTabs: { id: NavTab; label: string; icon: unknown }[] = [
             <span v-if="!isCollapsed">{{ tab.label }}</span>
           </button>
         </div>
+      </div>
+    </div>
+
+    <div v-if="contributions.length > 0" class="px-1.5 mb-2">
+      <div v-if="!isCollapsed" class="flex items-center gap-2 mb-1.5 px-1.5">
+        <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">插件扩展</span>
+        <div class="flex-1 h-[1px] bg-[#222428]" />
+      </div>
+      <div v-else class="w-full h-[1px] bg-[#222428] my-1.5" />
+      <div class="space-y-1">
+        <button
+          v-for="contribution in contributions"
+          :key="contribution.id"
+          class="w-full flex items-center rounded-md font-medium text-xs transition-colors cursor-pointer text-left"
+          :class="[
+            isCollapsed ? 'justify-center h-9' : 'gap-2.5 px-2.5 py-2',
+            'text-slate-300 hover:bg-[#1a1c20] hover:text-white',
+          ]"
+          :title="contribution.label"
+          @click="emit('plugin-contribution', contribution)"
+        >
+          <span class="w-3.5 h-3.5 flex items-center justify-center text-sm shrink-0">{{ contribution.icon ?? '🧩' }}</span>
+          <span v-if="!isCollapsed" class="truncate">{{ contribution.label }}</span>
+        </button>
       </div>
     </div>
 

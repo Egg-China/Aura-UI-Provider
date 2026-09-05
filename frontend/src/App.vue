@@ -24,6 +24,8 @@ import {
   MOCK_MODS,
   DEFAULT_SETTINGS,
 } from './data/mockData';
+import { bridgeRequest, parseSnapshot } from './bridge';
+import type { PluginContribution } from './bridge';
 import type {
   NavTab,
   MinecraftInstance,
@@ -39,6 +41,7 @@ const instances = ref<MinecraftInstance[]>(INITIAL_INSTANCES);
 const currentInstance = ref<MinecraftInstance>(INITIAL_INSTANCES[0]);
 const accounts = ref<Account[]>(INITIAL_ACCOUNTS);
 const plugins = ref<LauncherPlugin[]>(MOCK_PLUGINS);
+const pluginContributions = ref<PluginContribution[]>([]);
 const mods = ref<ModItem[]>(MOCK_MODS);
 const settings = ref<LauncherSettings>({ ...DEFAULT_SETTINGS });
 
@@ -73,6 +76,11 @@ async function animatePageSwitch() {
 
 function handleLaunchGame(target: MinecraftInstance = currentInstance.value) {
   currentInstance.value = target;
+  if (isTauri) {
+    void bridgeRequest('core.instance.launch', { id: target.id }).catch((error) => {
+      showToast(`启动器启动失败: ${String(error)}`);
+    });
+  }
   isLaunching.value = true;
   isLaunchModalOpen.value = true;
   showToast(`正在启动 ${target.name}...`);
@@ -201,6 +209,100 @@ const pageTitles: Record<NavTab, string> = {
 
 const isTauri = '__TAURI_INTERNALS__' in (globalThis as Record<string, unknown>);
 
+const navTabs: NavTab[] = ['home', 'instances', 'mods', 'download', 'plugins', 'settings', 'multiplayer', 'console'];
+
+function hydrateInstances(raw: unknown): MinecraftInstance[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    .map((item) => ({
+      id: String(item.id ?? `inst-${Math.random().toString(36).slice(2)}`),
+      name: String(item.name ?? '未命名实例'),
+      version: String(item.version ?? '1.21.4'),
+      loader: (['Vanilla', 'Fabric', 'Forge', 'NeoForge', 'Quilt'] as const).includes(item.loader as never)
+        ? (item.loader as MinecraftInstance['loader'])
+        : 'Vanilla',
+      loaderVersion: item.loaderVersion === undefined ? undefined : String(item.loaderVersion),
+      icon: String(item.icon ?? '⛏️'),
+      lastPlayed: String(item.lastPlayed ?? '从未'),
+      playTime: String(item.playTime ?? '0.0 小时'),
+      modCount: Number(item.modCount ?? 0),
+      bannerImage: item.bannerImage === undefined ? undefined : String(item.bannerImage),
+      description: String(item.description ?? '由启动器同步的实例。'),
+      isFavorite: Boolean(item.isFavorite ?? false),
+      javaVersion: String(item.javaVersion ?? 'Java 21'),
+      memoryMin: Number(item.memoryMin ?? 2),
+      memoryMax: Number(item.memoryMax ?? 4),
+    }));
+}
+
+function hydrateAccounts(raw: unknown): Account[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    .map((item) => ({
+      id: String(item.id ?? `acc-${Math.random().toString(36).slice(2)}`),
+      username: String(item.username ?? '玩家'),
+      uuid: String(item.uuid ?? ''),
+      type: (['microsoft', 'thirdparty', 'offline'] as const).includes(item.type as never)
+        ? (item.type as Account['type'])
+        : 'offline',
+      skinUrl: String(item.skinUrl ?? 'https://minotar.net/helm/MHF_Steve/128.png'),
+      isActive: Boolean(item.isActive ?? false),
+      authServer: item.authServer === undefined ? undefined : String(item.authServer),
+    }));
+}
+
+function hydrateSettings(raw: unknown): Partial<LauncherSettings> {
+  if (typeof raw !== 'object' || raw === null) return {};
+  const source = raw as Record<string, unknown>;
+  const patch: Partial<LauncherSettings> = {};
+  if (source.colorMode === 'dark' || source.colorMode === 'light') patch.colorMode = source.colorMode;
+  if (typeof source.language === 'string') patch.language = source.language as LauncherSettings['language'];
+  if (typeof source.themeAuraColor === 'string') patch.themeAuraColor = source.themeAuraColor;
+  return patch;
+}
+
+async function hydrateFromLauncher() {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const snapshot = parseSnapshot(await invoke<string>('get_snapshot'));
+  if (!snapshot) return;
+
+  const nextInstances = hydrateInstances(snapshot.instances);
+  if (nextInstances.length > 0) {
+    instances.value = nextInstances;
+    currentInstance.value = nextInstances[0];
+  }
+  const nextAccounts = hydrateAccounts(snapshot.accounts);
+  if (nextAccounts.length > 0) {
+    accounts.value = nextAccounts.some((account) => account.isActive)
+      ? nextAccounts
+      : nextAccounts.map((account, index) => ({ ...account, isActive: index === 0 }));
+  }
+  const settingsPatch = hydrateSettings(snapshot.settings);
+  if (Object.keys(settingsPatch).length > 0) {
+    settings.value = { ...settings.value, ...settingsPatch };
+  }
+  if (Array.isArray(snapshot.pluginContributions)) {
+    pluginContributions.value = snapshot.pluginContributions.filter(
+      (contribution) => contribution && typeof contribution.id === 'string' && typeof contribution.label === 'string',
+    );
+  }
+}
+
+async function runPluginContribution(contribution: PluginContribution) {
+  if (!isTauri) {
+    showToast(`插件入口（本机预览）: ${contribution.label}`);
+    return;
+  }
+  try {
+    await bridgeRequest('core.plugin.action', { id: contribution.id });
+    showToast(`已执行插件入口: ${contribution.label}`);
+  } catch (error) {
+    showToast(`插件入口失败: ${String(error)}`);
+  }
+}
+
 onMounted(async () => {
   animatePageSwitch();
   if (!isTauri) return;
@@ -208,14 +310,29 @@ onMounted(async () => {
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke('notify_ready');
-    showToast('已连接 Aura 启动器协议桥');
+    await hydrateFromLauncher();
+    showToast('已连接 Aura 启动器并同步状态');
 
     const eventTimer = window.setInterval(async () => {
       try {
         const events = await invoke<Array<{ kind: string; payload: unknown }>>('drain_events');
         for (const event of events) {
-          if (event.kind === 'navigate') showToast(`启动器请求导航: ${JSON.stringify(event.payload)}`);
-          else if (event.kind === 'notify') showToast(`启动器通知: ${JSON.stringify(event.payload)}`);
+          if (event.kind === 'navigate') {
+            const target = typeof event.payload === 'object' && event.payload !== null
+              ? (event.payload as Record<string, unknown>).tab
+              : undefined;
+            if (typeof target === 'string' && navTabs.includes(target as NavTab)) {
+              activeTab.value = target as NavTab;
+              showToast(`已导航: ${target}`);
+            } else {
+              showToast(`启动器请求导航: ${JSON.stringify(event.payload)}`);
+            }
+          } else if (event.kind === 'notify') {
+            const message = typeof event.payload === 'object' && event.payload !== null
+              ? (event.payload as Record<string, unknown>).message
+              : undefined;
+            showToast(typeof message === 'string' ? message : `启动器通知: ${JSON.stringify(event.payload)}`);
+          }
         }
       } catch {
         window.clearInterval(eventTimer);
@@ -246,6 +363,8 @@ onMounted(async () => {
         :is-collapsed="isSidebarCollapsed"
         :plugin-count="plugins.filter((p) => p.enabled).length"
         :current-account="accounts.find((a) => a.isActive) ?? accounts[0]"
+        :contributions="pluginContributions"
+        @plugin-contribution="runPluginContribution"
         @update:active-tab="activeTab = $event"
         @collapse="isSidebarCollapsed = !isSidebarCollapsed"
         @open-accounts="isAccountModalOpen = true"
