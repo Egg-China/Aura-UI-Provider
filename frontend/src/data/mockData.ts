@@ -269,7 +269,7 @@ export const DEFAULT_SETTINGS: LauncherSettings = {
   gameEnvVars: '',
   proxyUsername: '',
   proxyPassword: '',
-  selectedUiFrontend: 'javafx',
+  selectedUiFrontend: 'dev.aura.modern-ui',
   backgroundStyle: 'particles',
   uiFontScale: 100,
   aprilFools: false,

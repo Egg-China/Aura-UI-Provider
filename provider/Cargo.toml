@@ -1,6 +1,6 @@
 [package]
 name = "aura-ui-provider"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Aura Launcher isolated native UI frontend speaking the aura.ui.v1 protocol"
 license = "Apache-2.0"

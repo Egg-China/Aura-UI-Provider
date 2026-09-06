@@ -120,7 +120,7 @@ const backgroundStyles: { id: LauncherSettings['backgroundStyle']; name: string;
 
 const uiFrontends: { id: LauncherSettings['selectedUiFrontend']; name: string; desc: string }[] = [
   { id: 'javafx', name: '内建 JavaFX 界面', desc: 'HMCL 经典界面，内建不可卸载，永远可作恢复界面' },
-  { id: 'modern-ui', name: 'Aura Modern UI', desc: 'Tauri 2 + Vue 3 新界面，以 .npl UI-Provider 插件分发' },
+  { id: 'dev.aura.modern-ui', name: 'Aura Modern UI', desc: 'Tauri 2 + Vue 3 新界面，以 .npl UI-Provider 插件分发' },
 ];
 
 const DEFAULT_JVM_ARGS =

@@ -91,6 +91,10 @@ function handleLaunchGame(target: MinecraftInstance = currentInstance.value) {
 
 function updateSettings(patch: Partial<LauncherSettings>) {
   settings.value = { ...settings.value, ...patch };
+  if (!isTauri || patch.selectedUiFrontend === undefined) return;
+  void bridgeRequest('core.settings.set', { key: 'uiFrontend', value: patch.selectedUiFrontend })
+    .then(() => showToast('界面切换已保存，重启启动器后生效'))
+    .catch((error) => showToast(`界面切换保存失败: ${String(error)}`));
 }
 
 function toggleColorMode() {
@@ -269,6 +273,9 @@ function hydrateSettings(raw: unknown): Partial<LauncherSettings> {
   if (source.colorMode === 'dark' || source.colorMode === 'light') patch.colorMode = source.colorMode;
   if (typeof source.language === 'string') patch.language = source.language as LauncherSettings['language'];
   if (typeof source.themeAuraColor === 'string') patch.themeAuraColor = source.themeAuraColor;
+  if (source.uiFrontend === 'javafx' || source.uiFrontend === 'dev.aura.modern-ui') {
+    patch.selectedUiFrontend = source.uiFrontend;
+  }
   return patch;
 }
 

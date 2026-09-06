@@ -114,7 +114,7 @@ export interface LauncherSettings {
   gameEnvVars: string;
   proxyUsername: string;
   proxyPassword: string;
-  selectedUiFrontend: 'javafx' | 'modern-ui';
+  selectedUiFrontend: 'javafx' | 'dev.aura.modern-ui';
   backgroundStyle: 'particles' | 'gradient' | 'plain';
   uiFontScale: number;
   aprilFools: boolean;
