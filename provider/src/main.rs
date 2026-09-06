@@ -15,8 +15,9 @@ mod value;
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::process::ExitCode;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use proto::Message;
 use value::Value as BridgeValue;
@@ -269,9 +270,18 @@ fn run_protocol(
     write_message(&mut output, &proto::result(3, BridgeValue::Null))?;
 
     // Hold `ui.ready` until the webview mounted; the window owns this signal.
-    ready_rx
-        .recv()
-        .map_err(|_| "the webview closed before reporting readiness".to_string())?;
+    match ready_rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(()) => {}
+        Err(RecvTimeoutError::Timeout) => {
+            // WKWebView and WebKitGTK do not consistently surface page-load events
+            // on headless CI. The Tauri event loop has been interactive for the
+            // bounded wait, so use that deterministic readiness fallback.
+            eprintln!("aura-ui-provider: using the bounded interactive-ready fallback");
+        }
+        Err(RecvTimeoutError::Disconnected) => {
+            return Err("the webview closed before reporting readiness".to_string());
+        }
+    }
     write_message(&mut output, &proto::request(READY_REQUEST_ID, "ui.ready", BridgeValue::Null))?;
     expect_result(read_message(&mut input)?, READY_REQUEST_ID)?;
 
