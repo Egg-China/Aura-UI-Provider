@@ -136,6 +136,21 @@ export async function auraCoreCreateInstance(name: string, version: string, grou
     );
 }
 
+/// Starts a MultiMC-archive import and returns the tracked task id.
+export async function auraCoreImportInstance(source: string, name: string, group?: string): Promise<string> {
+    const reply = rejectBackendError(
+        await bridgeRequest<{ taskId?: string }>('core.auracore.instance.import', {
+            source,
+            name,
+            group: group ?? null,
+        }),
+    );
+    if (typeof reply.taskId !== 'string' || reply.taskId.length === 0) {
+        throw new Error('AuraCore did not return an import task id');
+    }
+    return reply.taskId;
+}
+
 /// Renames one AuraCore instance.
 export async function auraCoreRenameInstance(id: string, name: string): Promise<void> {
     rejectBackendError(await bridgeRequest('core.auracore.instance.rename', { id, name }));

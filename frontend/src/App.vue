@@ -17,6 +17,7 @@ import PlaceholderPage from './components/pages/PlaceholderPage.vue';
 import LaunchModal from './components/LaunchModal.vue';
 import NewInstanceModal from './components/NewInstanceModal.vue';
 import EditInstanceModal from './components/EditInstanceModal.vue';
+import ImportInstanceModal from './components/ImportInstanceModal.vue';
 import AccountModal from './components/AccountModal.vue';
 import {
   INITIAL_INSTANCES,
@@ -31,6 +32,7 @@ import {
   auraCoreBeginMsaLogin,
   auraCoreCreateInstance,
   auraCoreDeleteInstance,
+  auraCoreImportInstance,
   auraCoreListAccounts,
   auraCoreListInstances,
   auraCoreMigrate,
@@ -81,6 +83,7 @@ const isLaunchModalOpen = ref(false);
 const isNewInstanceModalOpen = ref(false);
 const isEditInstanceModalOpen = ref(false);
 const editingInstance = ref<MinecraftInstance | null>(null);
+const isImportModalOpen = ref(false);
 const isAccountModalOpen = ref(false);
 const toastMessage = ref<string | null>(null);
 const mainViewRef = useTemplateRef<HTMLDivElement>('mainView');
@@ -232,6 +235,17 @@ function duplicateInstance(instance: MinecraftInstance) {
   };
   instances.value = [...instances.value, copy];
   showToast(`已克隆实例: ${copy.name}`);
+}
+
+function importInstance(payload: { source: string; name: string; group: string }) {
+  if (!auraCoreActive.value) {
+    showToast('实例导入需要切换到 AuraCore 原生核心');
+    return;
+  }
+  showToast(`正在通过 AuraCore 导入实例: ${payload.name}...`);
+  void auraCoreImportInstance(payload.source, payload.name, payload.group.length > 0 ? payload.group : undefined)
+    .then((taskId) => void trackAuraCoreTask(taskId, `实例导入完成: ${payload.name}`))
+    .catch((error) => showToast(`AuraCore 实例导入失败: ${String(error)}`));
 }
 
 function openEditModal(instance: MinecraftInstance) {
@@ -741,12 +755,14 @@ onMounted(async () => {
             v-else-if="activeTab === 'instances'"
             :instances="instances"
             :current-instance="currentInstance"
+            :aura-core-active="auraCoreActive"
             @select-instance="currentInstance = $event"
             @delete-instance="deleteInstance"
             @edit-instance="openEditModal"
             @duplicate-instance="duplicateInstance"
             @toggle-favorite="toggleFavorite"
             @open-new-instance="isNewInstanceModalOpen = true"
+            @open-import="isImportModalOpen = true"
             @open-folder="openFolder"
             @launch-instance="handleLaunchGame"
             @navigate="activeTab = $event"
@@ -825,6 +841,12 @@ onMounted(async () => {
       :aura-core-active="auraCoreActive"
       @close="isEditInstanceModalOpen = false"
       @save-instance="saveInstanceEdit"
+    />
+
+    <ImportInstanceModal
+      :open="isImportModalOpen"
+      @close="isImportModalOpen = false"
+      @import-instance="importInstance"
     />
 
     <AccountModal

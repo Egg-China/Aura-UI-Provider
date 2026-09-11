@@ -33,6 +33,7 @@ interface GameDirectory {
 const props = defineProps<{
   instances: MinecraftInstance[];
   currentInstance: MinecraftInstance;
+  auraCoreActive?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -42,6 +43,7 @@ const emit = defineEmits<{
   (event: 'duplicate-instance', instance: MinecraftInstance): void;
   (event: 'toggle-favorite', id: string): void;
   (event: 'open-new-instance'): void;
+  (event: 'open-import'): void;
   (event: 'open-folder', instance: MinecraftInstance): void;
   (event: 'launch-instance', instance: MinecraftInstance): void;
   (event: 'navigate', tab: NavTab): void;
@@ -171,9 +173,13 @@ function selectAndLaunch(instance: MinecraftInstance) {
       </div>
 
       <div class="flex items-center gap-2">
-        <BedrockButton variant="grey" size="sm" @click="emit('show-toast', '请将 .mrpack / .zip 整合包拖入窗口')">
+        <BedrockButton
+          variant="grey"
+          size="sm"
+          @click="auraCoreActive ? emit('open-import') : emit('show-toast', '请将 .mrpack / .zip 整合包拖入窗口')"
+        >
           <Package class="w-3.5 h-3.5 mr-1 text-slate-300" />
-          <span>导入整合包</span>
+          <span>{{ auraCoreActive ? '导入实例 (AuraCore)' : '导入整合包' }}</span>
         </BedrockButton>
 
         <BedrockButton variant="green" size="sm" @click="emit('open-new-instance')">
