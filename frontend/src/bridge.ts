@@ -136,6 +136,20 @@ export async function auraCoreCreateInstance(name: string, version: string, grou
     );
 }
 
+/// Exports one launcher-side instance as a MultiMC modpack archive.
+export async function exportInstanceAsMultiMc(id: string, output: string, name?: string): Promise<void> {
+    const reply = rejectBackendError(
+        await bridgeRequest<{ exported?: boolean }>('core.instance.export.multimc', {
+            id,
+            output,
+            name: name ?? null,
+        }),
+    );
+    if (reply.exported !== true) {
+        throw new Error('MultiMC export failed');
+    }
+}
+
 /// Starts a MultiMC-archive import and returns the tracked task id.
 export async function auraCoreImportInstance(source: string, name: string, group?: string): Promise<string> {
     const reply = rejectBackendError(

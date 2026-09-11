@@ -7,6 +7,7 @@ import {
   Trash2,
   Copy,
   Pencil,
+  Share2,
   FolderOpen,
   Star,
   Layers,
@@ -40,6 +41,7 @@ const emit = defineEmits<{
   (event: 'select-instance', instance: MinecraftInstance): void;
   (event: 'delete-instance', id: string): void;
   (event: 'edit-instance', instance: MinecraftInstance): void;
+  (event: 'export-instance', instance: MinecraftInstance): void;
   (event: 'duplicate-instance', instance: MinecraftInstance): void;
   (event: 'toggle-favorite', id: string): void;
   (event: 'open-new-instance'): void;
@@ -330,6 +332,15 @@ function selectAndLaunch(instance: MinecraftInstance) {
                 @click.stop="emit('open-folder', inst)"
               >
                 <FolderOpen class="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                v-if="!auraCoreActive"
+                class="p-1.5 rounded-md bg-[#101113] hover:bg-[#202227] text-slate-400 hover:text-white border border-[#24262b] transition-colors cursor-pointer"
+                title="导出 MultiMC 整合包"
+                @click.stop="emit('export-instance', inst)"
+              >
+                <Share2 class="w-3.5 h-3.5" />
               </button>
 
               <button

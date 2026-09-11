@@ -18,6 +18,7 @@ import LaunchModal from './components/LaunchModal.vue';
 import NewInstanceModal from './components/NewInstanceModal.vue';
 import EditInstanceModal from './components/EditInstanceModal.vue';
 import ImportInstanceModal from './components/ImportInstanceModal.vue';
+import ExportInstanceModal from './components/ExportInstanceModal.vue';
 import AccountModal from './components/AccountModal.vue';
 import {
   INITIAL_INSTANCES,
@@ -34,6 +35,7 @@ import {
   auraCoreDeleteInstance,
   auraCoreImportInstance,
   auraCoreListAccounts,
+  exportInstanceAsMultiMc,
   auraCoreListInstances,
   auraCoreMigrate,
   auraCoreMsaInfo,
@@ -84,6 +86,8 @@ const isNewInstanceModalOpen = ref(false);
 const isEditInstanceModalOpen = ref(false);
 const editingInstance = ref<MinecraftInstance | null>(null);
 const isImportModalOpen = ref(false);
+const isExportModalOpen = ref(false);
+const exportingInstance = ref<MinecraftInstance | null>(null);
 const isAccountModalOpen = ref(false);
 const toastMessage = ref<string | null>(null);
 const mainViewRef = useTemplateRef<HTMLDivElement>('mainView');
@@ -246,6 +250,26 @@ function importInstance(payload: { source: string; name: string; group: string }
   void auraCoreImportInstance(payload.source, payload.name, payload.group.length > 0 ? payload.group : undefined)
     .then((taskId) => void trackAuraCoreTask(taskId, `实例导入完成: ${payload.name}`))
     .catch((error) => showToast(`AuraCore 实例导入失败: ${String(error)}`));
+}
+
+function openExportModal(instance: MinecraftInstance) {
+  exportingInstance.value = instance;
+  isExportModalOpen.value = true;
+}
+
+function exportInstance(payload: { instance: MinecraftInstance; output: string; name: string }) {
+  if (auraCoreActive.value) {
+    showToast('MultiMC 导出仅支持 HMCL 核心实例；AuraCore 实例请使用后端导出');
+    return;
+  }
+  if (!isTauri.value) {
+    showToast(`（本机预览）已导出 ${payload.name} → ${payload.output}`);
+    return;
+  }
+  showToast(`正在导出 MultiMC 整合包: ${payload.name}...`);
+  void exportInstanceAsMultiMc(payload.instance.id, payload.output, payload.name)
+    .then(() => showToast(`整合包导出完成: ${payload.output}`))
+    .catch((error) => showToast(`整合包导出失败: ${String(error)}`));
 }
 
 function openEditModal(instance: MinecraftInstance) {
@@ -759,6 +783,7 @@ onMounted(async () => {
             @select-instance="currentInstance = $event"
             @delete-instance="deleteInstance"
             @edit-instance="openEditModal"
+            @export-instance="openExportModal"
             @duplicate-instance="duplicateInstance"
             @toggle-favorite="toggleFavorite"
             @open-new-instance="isNewInstanceModalOpen = true"
@@ -847,6 +872,13 @@ onMounted(async () => {
       :open="isImportModalOpen"
       @close="isImportModalOpen = false"
       @import-instance="importInstance"
+    />
+
+    <ExportInstanceModal
+      :open="isExportModalOpen"
+      :instance="exportingInstance"
+      @close="isExportModalOpen = false"
+      @export-instance="exportInstance"
     />
 
     <AccountModal
