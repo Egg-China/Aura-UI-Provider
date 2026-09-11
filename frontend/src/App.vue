@@ -16,6 +16,7 @@ import ConsolePage from './components/pages/ConsolePage.vue';
 import PlaceholderPage from './components/pages/PlaceholderPage.vue';
 import LaunchModal from './components/LaunchModal.vue';
 import NewInstanceModal from './components/NewInstanceModal.vue';
+import EditInstanceModal from './components/EditInstanceModal.vue';
 import AccountModal from './components/AccountModal.vue';
 import {
   INITIAL_INSTANCES,
@@ -35,6 +36,9 @@ import {
   auraCoreMigrate,
   auraCoreMsaInfo,
   auraCoreRemoveAccount,
+  auraCoreRenameInstance,
+  auraCoreSetInstanceGroup,
+  auraCoreSetInstanceIcon,
   auraCoreSetDefaultAccount,
   auraCoreStatus,
   auraCoreTaskStatus,
@@ -75,6 +79,8 @@ let msaLoginTimer: number | undefined;
 const isLaunching = ref(false);
 const isLaunchModalOpen = ref(false);
 const isNewInstanceModalOpen = ref(false);
+const isEditInstanceModalOpen = ref(false);
+const editingInstance = ref<MinecraftInstance | null>(null);
 const isAccountModalOpen = ref(false);
 const toastMessage = ref<string | null>(null);
 const mainViewRef = useTemplateRef<HTMLDivElement>('mainView');
@@ -169,7 +175,10 @@ function updateSettings(patch: Partial<LauncherSettings>) {
             : '已切换为 HMCL Java 核心，重启启动器后生效',
         );
         void refreshAuraCoreStatus();
-        if (patch.coreEngine === 'auracore') void refreshAuraCoreData();
+        if (patch.coreEngine === 'auracore') {
+          void refreshAuraCoreData();
+          void handleMigrateAuraCore();
+        }
       })
       .catch((error) => showToast(`启动器核心切换失败: ${String(error)}`));
   }
@@ -223,6 +232,36 @@ function duplicateInstance(instance: MinecraftInstance) {
   };
   instances.value = [...instances.value, copy];
   showToast(`已克隆实例: ${copy.name}`);
+}
+
+function openEditModal(instance: MinecraftInstance) {
+  editingInstance.value = instance;
+  isEditInstanceModalOpen.value = true;
+}
+
+function saveInstanceEdit(payload: { instance: MinecraftInstance; name: string; group: string; icon: string }) {
+  const { instance, name, group, icon } = payload;
+  if (auraCoreActive.value) {
+    const operations: Promise<void>[] = [];
+    if (name !== instance.name) operations.push(auraCoreRenameInstance(instance.id, name));
+    if ((instance.group ?? '') !== group) operations.push(auraCoreSetInstanceGroup(instance.id, group));
+    if (icon !== instance.icon) operations.push(auraCoreSetInstanceIcon(instance.id, icon));
+    if (operations.length === 0) return;
+    void Promise.all(operations)
+      .then(async () => {
+        showToast(`已保存 AuraCore 实例设置: ${name}`);
+        await refreshAuraCoreData();
+      })
+      .catch((error) => showToast(`保存 AuraCore 实例失败: ${String(error)}`));
+    return;
+  }
+  instances.value = instances.value.map((entry) =>
+    entry.id === instance.id ? { ...entry, name, group: group.length > 0 ? group : undefined, icon } : entry,
+  );
+  if (currentInstance.value.id === instance.id) {
+    currentInstance.value = instances.value.find((entry) => entry.id === instance.id) ?? currentInstance.value;
+  }
+  showToast(`已保存实例设置: ${name}`);
 }
 
 function toggleFavorite(id: string) {
@@ -401,6 +440,7 @@ function hydrateAuraCoreInstances(raw: AuraCoreInstance[]): MinecraftInstance[] 
       id: item.id,
       name: typeof item.name === 'string' && item.name.length > 0 ? item.name : item.id,
       version: item.gameVersion ?? '未知版本',
+      group: item.group,
       loader: 'Vanilla' as const,
       icon: typeof item.icon === 'string' && item.icon.length > 0 ? item.icon : '⛏️',
       lastPlayed: item.lastLaunch && item.lastLaunch > 0 ? new Date(item.lastLaunch).toLocaleString() : '从未',
@@ -422,14 +462,18 @@ function auraCoreAccountType(type: string): Account['type'] {
 }
 
 function hydrateAuraCoreAccounts(raw: AuraCoreAccount[]): Account[] {
-  return raw.map((item, index) => ({
+  const mapped = raw.map((item) => ({
     id: item.internalId || item.profileName,
     username: item.profileName,
     uuid: item.internalId || item.profileName,
     type: auraCoreAccountType(item.type),
     skinUrl: `https://minotar.net/helm/${encodeURIComponent(item.profileName)}/128.png`,
-    isActive: index === 0,
+    isActive: item.isDefault === true,
   }));
+  if (mapped.length > 0 && !mapped.some((account) => account.isActive)) {
+    mapped[0] = { ...mapped[0], isActive: true };
+  }
+  return mapped;
 }
 
 async function refreshAuraCoreStatus() {
@@ -696,6 +740,7 @@ onMounted(async () => {
             :current-instance="currentInstance"
             @select-instance="currentInstance = $event"
             @delete-instance="deleteInstance"
+            @edit-instance="openEditModal"
             @duplicate-instance="duplicateInstance"
             @toggle-favorite="toggleFavorite"
             @open-new-instance="isNewInstanceModalOpen = true"
@@ -769,6 +814,14 @@ onMounted(async () => {
       :aura-core-active="auraCoreActive"
       @close="isNewInstanceModalOpen = false"
       @create-instance="createInstance"
+    />
+
+    <EditInstanceModal
+      :open="isEditInstanceModalOpen"
+      :instance="editingInstance"
+      :aura-core-active="auraCoreActive"
+      @close="isEditInstanceModalOpen = false"
+      @save-instance="saveInstanceEdit"
     />
 
     <AccountModal

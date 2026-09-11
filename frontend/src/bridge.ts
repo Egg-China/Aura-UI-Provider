@@ -68,6 +68,7 @@ export interface AuraCoreAccount {
     type: string;
     internalId: string;
     hasProfile: boolean;
+    isDefault?: boolean;
 }
 
 /// Task snapshot from `core.auracore.task.status`.
@@ -140,6 +141,16 @@ export async function auraCoreRenameInstance(id: string, name: string): Promise<
 /// Deletes one AuraCore instance directory.
 export async function auraCoreDeleteInstance(id: string): Promise<void> {
     rejectBackendError(await bridgeRequest('core.auracore.instance.delete', { id }));
+}
+
+/// Moves one AuraCore instance into a group; an empty group clears it.
+export async function auraCoreSetInstanceGroup(id: string, group: string): Promise<void> {
+    rejectBackendError(await bridgeRequest('core.auracore.instance.group', { id, group }));
+}
+
+/// Sets the icon key of one AuraCore instance.
+export async function auraCoreSetInstanceIcon(id: string, icon: string): Promise<void> {
+    rejectBackendError(await bridgeRequest('core.auracore.instance.icon', { id, icon }));
 }
 
 /// Tails live output of one AuraCore instance.

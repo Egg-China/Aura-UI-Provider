@@ -6,6 +6,7 @@ import {
   Play,
   Trash2,
   Copy,
+  Pencil,
   FolderOpen,
   Star,
   Layers,
@@ -37,6 +38,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'select-instance', instance: MinecraftInstance): void;
   (event: 'delete-instance', id: string): void;
+  (event: 'edit-instance', instance: MinecraftInstance): void;
   (event: 'duplicate-instance', instance: MinecraftInstance): void;
   (event: 'toggle-favorite', id: string): void;
   (event: 'open-new-instance'): void;
@@ -322,6 +324,14 @@ function selectAndLaunch(instance: MinecraftInstance) {
                 @click.stop="emit('open-folder', inst)"
               >
                 <FolderOpen class="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                class="p-1.5 rounded-md bg-[#101113] hover:bg-[#202227] text-slate-400 hover:text-white border border-[#24262b] transition-colors cursor-pointer"
+                title="编辑实例"
+                @click.stop="emit('edit-instance', inst)"
+              >
+                <Pencil class="w-3.5 h-3.5" />
               </button>
 
               <button

@@ -8,6 +8,7 @@ export interface MinecraftInstance {
   version: string;
   loader: ModLoader;
   loaderVersion?: string;
+  group?: string;
   icon: string;
   lastPlayed: string;
   playTime: string;
