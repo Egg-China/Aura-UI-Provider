@@ -60,6 +60,9 @@ export interface AuraCoreInstance {
     group?: string;
     lastLaunch?: number;
     gameVersion?: string;
+    loader?: string;
+    loaderVersion?: string;
+    modCount?: number;
 }
 
 /// One backend account entry from `core.auracore.accounts.list`.

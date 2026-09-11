@@ -441,11 +441,14 @@ function hydrateAuraCoreInstances(raw: AuraCoreInstance[]): MinecraftInstance[] 
       name: typeof item.name === 'string' && item.name.length > 0 ? item.name : item.id,
       version: item.gameVersion ?? '未知版本',
       group: item.group,
-      loader: 'Vanilla' as const,
+      loader: (['Vanilla', 'Fabric', 'Forge', 'NeoForge', 'Quilt'] as const).includes(item.loader as never)
+        ? (item.loader as MinecraftInstance['loader'])
+        : 'Vanilla',
+      loaderVersion: item.loaderVersion === undefined || item.loaderVersion.length === 0 ? undefined : item.loaderVersion,
       icon: typeof item.icon === 'string' && item.icon.length > 0 ? item.icon : '⛏️',
       lastPlayed: item.lastLaunch && item.lastLaunch > 0 ? new Date(item.lastLaunch).toLocaleString() : '从未',
       playTime: '—',
-      modCount: 0,
+      modCount: Number.isFinite(item.modCount) ? Number(item.modCount) : 0,
       description: item.group ? `AuraCore 分组: ${item.group}` : '由 AuraCore 原生核心管理的实例。',
       isFavorite: false,
       javaVersion: '自动选择',
