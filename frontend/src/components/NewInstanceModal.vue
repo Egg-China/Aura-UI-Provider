@@ -7,6 +7,7 @@ import type { MinecraftInstance, ModLoader } from '../types/launcher';
 
 const props = defineProps<{
   open: boolean;
+  auraCoreActive?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -28,7 +29,7 @@ watch(
     if (open) {
       name.value = '新建世界 / 实例';
       version.value = '1.21.4';
-      loader.value = 'Fabric';
+      loader.value = props.auraCoreActive ? 'Vanilla' : 'Fabric';
       icon.value = '⛏️';
       isCreating.value = false;
     }
@@ -107,15 +108,20 @@ function handleSubmit() {
 
         <div class="space-y-1">
           <label class="text-xs font-bold text-white block">模组加载器 (Mod Loader)</label>
+          <p v-if="auraCoreActive" class="text-[10px] text-amber-400">
+            AuraCore 原生核心当前仅支持创建 Vanilla 实例
+          </p>
           <div class="grid grid-cols-2 gap-2">
             <button
               v-for="ld in loaders"
               :key="ld"
               type="button"
-              class="p-2 rounded text-xs font-bold border transition-all cursor-pointer"
+              class="p-2 rounded text-xs font-bold border transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               :class="loader === ld
                 ? 'bg-[#3c8527] border-[#52a535] text-white'
                 : 'bg-[#1e1f20] border-[#38393b] text-slate-300 hover:bg-[#28292b]'"
+              :disabled="auraCoreActive && ld !== 'Vanilla'"
+              :title="auraCoreActive && ld !== 'Vanilla' ? 'AuraCore 暂不支持该加载器' : undefined"
               @click="loader = ld"
             >
               {{ ld }}

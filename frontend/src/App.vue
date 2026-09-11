@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, useTemplateRef } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef } from 'vue';
 import anime from 'animejs';
 import { Info } from 'lucide-vue-next';
 import TitleBar from './components/TitleBar.vue';
@@ -25,7 +25,28 @@ import {
   DEFAULT_SETTINGS,
 } from './data/mockData';
 import { bridgeRequest, parseSnapshot } from './bridge';
-import type { PluginContribution } from './bridge';
+import {
+  auraCoreAddOfflineAccount,
+  auraCoreBeginMsaLogin,
+  auraCoreCreateInstance,
+  auraCoreDeleteInstance,
+  auraCoreListAccounts,
+  auraCoreListInstances,
+  auraCoreMigrate,
+  auraCoreMsaInfo,
+  auraCoreRemoveAccount,
+  auraCoreSetDefaultAccount,
+  auraCoreStatus,
+  auraCoreTaskStatus,
+  launchInstance,
+} from './bridge';
+import type {
+  AuraCoreAccount,
+  AuraCoreInstance,
+  AuraCoreStatus,
+  AuraCoreTaskStatus,
+  PluginContribution,
+} from './bridge';
 import type {
   NavTab,
   MinecraftInstance,
@@ -44,6 +65,12 @@ const plugins = ref<LauncherPlugin[]>(MOCK_PLUGINS);
 const pluginContributions = ref<PluginContribution[]>([]);
 const mods = ref<ModItem[]>(MOCK_MODS);
 const settings = ref<LauncherSettings>({ ...DEFAULT_SETTINGS });
+const auraCoreEngineStatus = ref<AuraCoreStatus | null>(null);
+const isMigratingAuraCore = ref(false);
+const launchTaskStatusState = ref<AuraCoreTaskStatus | null>(null);
+const msaLoginState = ref<{ active: boolean; verificationUrl?: string; userCode?: string; message: string } | null>(null);
+let launchTaskTimer: number | undefined;
+let msaLoginTimer: number | undefined;
 
 const isLaunching = ref(false);
 const isLaunchModalOpen = ref(false);
@@ -76,10 +103,14 @@ async function animatePageSwitch() {
 
 function handleLaunchGame(target: MinecraftInstance = currentInstance.value) {
   currentInstance.value = target;
-  if (isTauri) {
-    void bridgeRequest('core.instance.launch', { id: target.id }).catch((error) => {
-      showToast(`启动器启动失败: ${String(error)}`);
-    });
+  if (isTauri.value) {
+    void launchInstance(target.id)
+      .then((taskId) => {
+        if (taskId !== null) startLaunchTaskPolling(taskId);
+      })
+      .catch((error) => {
+        showToast(`启动器启动失败: ${String(error)}`);
+      });
   }
   isLaunching.value = true;
   isLaunchModalOpen.value = true;
@@ -89,12 +120,59 @@ function handleLaunchGame(target: MinecraftInstance = currentInstance.value) {
   }, 3600);
 }
 
+function startLaunchTaskPolling(taskId: string) {
+  stopLaunchTaskPolling();
+  launchTaskStatusState.value = null;
+  launchTaskTimer = window.setInterval(async () => {
+    try {
+      const status = await auraCoreTaskStatus(taskId);
+      launchTaskStatusState.value = status;
+      if (status.state !== 'running') {
+        stopLaunchTaskPolling();
+        if (status.state === 'succeeded') {
+          showToast('AuraCore 启动任务完成，游戏进程运行中');
+        } else {
+          showToast(`AuraCore 启动任务${status.state === 'aborted' ? '已中止' : '失败'}: ${status.error ?? '未知错误'}`);
+        }
+        window.setTimeout(() => {
+          launchTaskStatusState.value = null;
+        }, 4200);
+      }
+    } catch (error) {
+      stopLaunchTaskPolling();
+      showToast(`AuraCore 任务查询失败: ${String(error)}`);
+    }
+  }, 1200);
+}
+
+function stopLaunchTaskPolling() {
+  if (launchTaskTimer !== undefined) {
+    window.clearInterval(launchTaskTimer);
+    launchTaskTimer = undefined;
+  }
+}
+
 function updateSettings(patch: Partial<LauncherSettings>) {
   settings.value = { ...settings.value, ...patch };
-  if (!isTauri || patch.selectedUiFrontend === undefined) return;
-  void bridgeRequest('core.settings.set', { key: 'uiFrontend', value: patch.selectedUiFrontend })
-    .then(() => showToast('界面切换已保存，重启启动器后生效'))
-    .catch((error) => showToast(`界面切换保存失败: ${String(error)}`));
+  if (!isTauri.value) return;
+  if (patch.selectedUiFrontend !== undefined) {
+    void bridgeRequest('core.settings.set', { key: 'uiFrontend', value: patch.selectedUiFrontend })
+      .then(() => showToast('界面切换已保存，重启启动器后生效'))
+      .catch((error) => showToast(`界面切换保存失败: ${String(error)}`));
+  }
+  if (patch.coreEngine !== undefined) {
+    void bridgeRequest('core.settings.set', { key: 'coreEngine', value: patch.coreEngine })
+      .then(() => {
+        showToast(
+          patch.coreEngine === 'auracore'
+            ? '已切换为 AuraCore 原生核心，重启启动器后生效'
+            : '已切换为 HMCL Java 核心，重启启动器后生效',
+        );
+        void refreshAuraCoreStatus();
+        if (patch.coreEngine === 'auracore') void refreshAuraCoreData();
+      })
+      .catch((error) => showToast(`启动器核心切换失败: ${String(error)}`));
+  }
 }
 
 function toggleColorMode() {
@@ -105,6 +183,13 @@ function toggleColorMode() {
 }
 
 function createInstance(instance: MinecraftInstance) {
+  if (auraCoreActive.value) {
+    showToast(`正在通过 AuraCore 创建实例: ${instance.name}...`);
+    void auraCoreCreateInstance(instance.name, instance.version)
+      .then((taskId) => void trackAuraCoreTask(taskId, `实例创建完成: ${instance.name}`))
+      .catch((error) => showToast(`AuraCore 实例创建失败: ${String(error)}`));
+    return;
+  }
   instances.value = [...instances.value, instance];
   currentInstance.value = instance;
   showToast(`已创建实例: ${instance.name}`);
@@ -112,6 +197,15 @@ function createInstance(instance: MinecraftInstance) {
 
 function deleteInstance(id: string) {
   const target = instances.value.find((i) => i.id === id);
+  if (auraCoreActive.value && target) {
+    void auraCoreDeleteInstance(id)
+      .then(async () => {
+        showToast(`已删除 AuraCore 实例: ${target.name}`);
+        await refreshAuraCoreData();
+      })
+      .catch((error) => showToast(`AuraCore 实例删除失败: ${String(error)}`));
+    return;
+  }
   instances.value = instances.value.filter((i) => i.id !== id);
   if (currentInstance.value.id === id) {
     currentInstance.value = instances.value[0] ?? currentInstance.value;
@@ -181,17 +275,49 @@ function openModsFolder() {
 }
 
 function selectAccount(account: Account) {
+  if (auraCoreActive.value) {
+    void auraCoreSetDefaultAccount(account.username)
+      .then(() => {
+        accounts.value = accounts.value.map((a) => ({ ...a, isActive: a.id === account.id }));
+        showToast(`已切换 AuraCore 默认账户: ${account.username}`);
+      })
+      .catch((error) => showToast(`切换 AuraCore 账户失败: ${String(error)}`));
+    return;
+  }
   accounts.value = accounts.value.map((a) => ({ ...a, isActive: a.id === account.id }));
   showToast(`已切换账户: ${account.username}`);
 }
 
 function addAccount(account: Account) {
+  if (auraCoreActive.value) {
+    if (account.type !== 'offline') {
+      showToast('AuraCore 原生核心暂仅支持离线与微软账户');
+      return;
+    }
+    void auraCoreAddOfflineAccount(account.username)
+      .then(async () => {
+        showToast(`已添加 AuraCore 离线账户: ${account.username}`);
+        await refreshAuraCoreData();
+      })
+      .catch((error) => showToast(`添加 AuraCore 账户失败: ${String(error)}`));
+    return;
+  }
   accounts.value = accounts.value.map((a) => ({ ...a, isActive: false }));
   accounts.value = [...accounts.value, account];
   showToast(`已添加账户: ${account.username}`);
 }
 
 function deleteAccount(id: string) {
+  const target = accounts.value.find((a) => a.id === id);
+  if (auraCoreActive.value && target) {
+    void auraCoreRemoveAccount(target.username)
+      .then(async () => {
+        showToast(`已移除 AuraCore 账户: ${target.username}`);
+        await refreshAuraCoreData();
+      })
+      .catch((error) => showToast(`移除 AuraCore 账户失败: ${String(error)}`));
+    return;
+  }
   const remaining = accounts.value.filter((a) => a.id !== id);
   if (remaining.length > 0 && !remaining.some((a) => a.isActive)) {
     remaining[0] = { ...remaining[0], isActive: true };
@@ -211,9 +337,11 @@ const pageTitles: Record<NavTab, string> = {
   console: '日志与控制台',
 };
 
-let isTauri = false;
+const isTauri = ref(false);
 
 const navTabs: NavTab[] = ['home', 'instances', 'mods', 'download', 'plugins', 'settings', 'multiplayer', 'console'];
+
+const auraCoreActive = computed(() => isTauri.value && settings.value.coreEngine === 'auracore');
 
 async function waitForTauri(timeoutMilliseconds = 5000): Promise<boolean> {
   const deadline = Date.now() + timeoutMilliseconds;
@@ -266,6 +394,91 @@ function hydrateAccounts(raw: unknown): Account[] {
     }));
 }
 
+function hydrateAuraCoreInstances(raw: AuraCoreInstance[]): MinecraftInstance[] {
+  return raw
+    .filter((item) => typeof item?.id === 'string' && item.id.length > 0)
+    .map((item) => ({
+      id: item.id,
+      name: typeof item.name === 'string' && item.name.length > 0 ? item.name : item.id,
+      version: item.gameVersion ?? '未知版本',
+      loader: 'Vanilla' as const,
+      icon: typeof item.icon === 'string' && item.icon.length > 0 ? item.icon : '⛏️',
+      lastPlayed: item.lastLaunch && item.lastLaunch > 0 ? new Date(item.lastLaunch).toLocaleString() : '从未',
+      playTime: '—',
+      modCount: 0,
+      description: item.group ? `AuraCore 分组: ${item.group}` : '由 AuraCore 原生核心管理的实例。',
+      isFavorite: false,
+      javaVersion: '自动选择',
+      memoryMin: 2,
+      memoryMax: 4,
+    }));
+}
+
+function auraCoreAccountType(type: string): Account['type'] {
+  const value = type.toLowerCase();
+  if (value.includes('msa') || value.includes('microsoft')) return 'microsoft';
+  if (value.includes('offline')) return 'offline';
+  return 'thirdparty';
+}
+
+function hydrateAuraCoreAccounts(raw: AuraCoreAccount[]): Account[] {
+  return raw.map((item, index) => ({
+    id: item.internalId || item.profileName,
+    username: item.profileName,
+    uuid: item.internalId || item.profileName,
+    type: auraCoreAccountType(item.type),
+    skinUrl: `https://minotar.net/helm/${encodeURIComponent(item.profileName)}/128.png`,
+    isActive: index === 0,
+  }));
+}
+
+async function refreshAuraCoreStatus() {
+  try {
+    auraCoreEngineStatus.value = await auraCoreStatus();
+  } catch {
+    auraCoreEngineStatus.value = null;
+  }
+}
+
+async function refreshAuraCoreData() {
+  if (!auraCoreActive.value) return;
+  try {
+    const backendInstances = hydrateAuraCoreInstances(await auraCoreListInstances());
+    instances.value = backendInstances;
+    if (backendInstances.length > 0 && !backendInstances.some((entry) => entry.id === currentInstance.value.id)) {
+      currentInstance.value = backendInstances[0];
+    }
+  } catch (error) {
+    showToast(`读取 AuraCore 实例失败: ${String(error)}`);
+  }
+  try {
+    accounts.value = hydrateAuraCoreAccounts(await auraCoreListAccounts());
+  } catch (error) {
+    showToast(`读取 AuraCore 账户失败: ${String(error)}`);
+  }
+}
+
+async function trackAuraCoreTask(taskId: string, doneMessage: string) {
+  for (let attempt = 0; attempt < 600; attempt++) {
+    try {
+      const status = await auraCoreTaskStatus(taskId);
+      if (status.state === 'succeeded') {
+        showToast(doneMessage);
+        await refreshAuraCoreData();
+        return;
+      }
+      if (status.state === 'failed' || status.state === 'aborted') {
+        showToast(`AuraCore 任务失败: ${status.error ?? status.state}`);
+        return;
+      }
+    } catch (error) {
+      showToast(`AuraCore 任务查询失败: ${String(error)}`);
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+  }
+}
+
 function hydrateSettings(raw: unknown): Partial<LauncherSettings> {
   if (typeof raw !== 'object' || raw === null) return {};
   const source = raw as Record<string, unknown>;
@@ -275,6 +488,9 @@ function hydrateSettings(raw: unknown): Partial<LauncherSettings> {
   if (typeof source.themeAuraColor === 'string') patch.themeAuraColor = source.themeAuraColor;
   if (source.uiFrontend === 'javafx' || source.uiFrontend === 'dev.aura.modern-ui') {
     patch.selectedUiFrontend = source.uiFrontend;
+  }
+  if (source.coreEngine === 'hmcl' || source.coreEngine === 'auracore') {
+    patch.coreEngine = source.coreEngine;
   }
   return patch;
 }
@@ -304,10 +520,13 @@ async function hydrateFromLauncher() {
       (contribution) => contribution && typeof contribution.id === 'string' && typeof contribution.label === 'string',
     );
   }
+  if (settings.value.coreEngine === 'auracore') {
+    await refreshAuraCoreData();
+  }
 }
 
 async function runPluginContribution(contribution: PluginContribution) {
-  if (!isTauri) {
+  if (!isTauri.value) {
     showToast(`插件入口（本机预览）: ${contribution.label}`);
     return;
   }
@@ -319,15 +538,87 @@ async function runPluginContribution(contribution: PluginContribution) {
   }
 }
 
+function stopMsaLoginPolling() {
+  if (msaLoginTimer !== undefined) {
+    window.clearInterval(msaLoginTimer);
+    msaLoginTimer = undefined;
+  }
+}
+
+function startMicrosoftDeviceLogin() {
+  if (!auraCoreActive.value) return;
+  stopMsaLoginPolling();
+  msaLoginState.value = { active: true, message: '正在向微软申请设备码...' };
+  void auraCoreBeginMsaLogin()
+    .then((taskId) => {
+      msaLoginTimer = window.setInterval(async () => {
+        try {
+          const info = await auraCoreMsaInfo(taskId);
+          if (info.codeIssued && info.userCode && !msaLoginState.value?.userCode) {
+            msaLoginState.value = {
+              active: true,
+              verificationUrl: info.verificationUrl,
+              userCode: info.userCode,
+              message: '等待浏览器完成授权...',
+            };
+          }
+          const status = await auraCoreTaskStatus(taskId);
+          if (status.state === 'succeeded') {
+            stopMsaLoginPolling();
+            msaLoginState.value = null;
+            showToast('微软账户授权成功');
+            void refreshAuraCoreData();
+          } else if (status.state === 'failed' || status.state === 'aborted') {
+            stopMsaLoginPolling();
+            msaLoginState.value = { active: false, message: `授权失败: ${status.error ?? status.state}` };
+            showToast(`微软授权失败: ${status.error ?? status.state}`);
+          }
+        } catch (error) {
+          stopMsaLoginPolling();
+          msaLoginState.value = { active: false, message: `授权查询失败: ${String(error)}` };
+        }
+      }, 1500);
+    })
+    .catch((error) => {
+      msaLoginState.value = { active: false, message: `无法开始微软登录: ${String(error)}` };
+      showToast(`微软登录启动失败: ${String(error)}`);
+    });
+}
+
+function handleMigrateAuraCore() {
+  if (!isTauri.value) return;
+  isMigratingAuraCore.value = true;
+  void auraCoreMigrate()
+    .then((outcomes) => {
+      const copied = Object.values(outcomes).filter((outcome) => outcome === 'copied').length;
+      const failed = Object.values(outcomes).length - copied;
+      showToast(
+        failed === 0
+          ? `AuraCore 设置迁移完成: ${copied} 项已复制`
+          : `AuraCore 迁移完成: ${copied} 项成功 / ${failed} 项失败`,
+      );
+    })
+    .catch((error) => showToast(`AuraCore 设置迁移失败: ${String(error)}`))
+    .finally(() => {
+      isMigratingAuraCore.value = false;
+    });
+}
+
+onUnmounted(() => {
+  stopLaunchTaskPolling();
+  stopMsaLoginPolling();
+});
+
 onMounted(async () => {
   animatePageSwitch();
   if (!(await waitForTauri())) return;
-  isTauri = true;
+  isTauri.value = true;
 
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke('notify_ready');
     await hydrateFromLauncher();
+    void refreshAuraCoreStatus();
     showToast('已连接 Aura 启动器并同步状态');
 
     const eventTimer = window.setInterval(async () => {
@@ -442,12 +733,17 @@ onMounted(async () => {
           <ConsolePage
             v-else-if="activeTab === 'console'"
             :instance-name="currentInstance.name"
+            :instance-id="currentInstance.id"
+            :engine-active="auraCoreActive"
             @show-toast="showToast"
           />
           <SettingsPage
             v-else-if="activeTab === 'settings'"
             :settings="settings"
+            :aura-core-status="auraCoreEngineStatus"
+            :is-migrating-aura-core="isMigratingAuraCore"
             @update-settings="updateSettings"
+            @migrate-auracore="handleMigrateAuraCore"
             @show-toast="showToast"
           />
           <PlaceholderPage
@@ -464,11 +760,13 @@ onMounted(async () => {
       :open="isLaunchModalOpen"
       :instance="currentInstance"
       :account="accounts.find((a) => a.isActive) ?? accounts[0]"
+      :task-status="launchTaskStatusState"
       @close="isLaunchModalOpen = false"
     />
 
     <NewInstanceModal
       :open="isNewInstanceModalOpen"
+      :aura-core-active="auraCoreActive"
       @close="isNewInstanceModalOpen = false"
       @create-instance="createInstance"
     />
@@ -477,10 +775,13 @@ onMounted(async () => {
       :open="isAccountModalOpen"
       :accounts="accounts"
       :current-account="accounts.find((a) => a.isActive) ?? accounts[0]"
+      :aura-core-active="auraCoreActive"
+      :msa-state="msaLoginState"
       @close="isAccountModalOpen = false"
       @select-account="selectAccount"
       @add-account="addAccount"
       @delete-account="deleteAccount"
+      @add-microsoft="startMicrosoftDeviceLogin"
     />
 
     <transition

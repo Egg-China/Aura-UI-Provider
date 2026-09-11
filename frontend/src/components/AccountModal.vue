@@ -28,6 +28,8 @@ const props = defineProps<{
   open: boolean;
   accounts: Account[];
   currentAccount: Account;
+  auraCoreActive?: boolean;
+  msaState?: { active: boolean; verificationUrl?: string; userCode?: string; message: string } | null;
 }>();
 
 const emit = defineEmits<{
@@ -35,6 +37,7 @@ const emit = defineEmits<{
   (event: 'select-account', account: Account): void;
   (event: 'add-account', account: Account): void;
   (event: 'delete-account', id: string): void;
+  (event: 'add-microsoft'): void;
 }>();
 
 const mode = ref<AccountModalMode>('view');
@@ -133,7 +136,15 @@ function handleAddThirdParty() {
   currentIndex.value = 0;
 }
 
+function copyMsaCode() {
+  void navigator.clipboard.writeText(props.msaState?.userCode ?? '');
+}
+
 function handleMicrosoftLogin() {
+  if (props.auraCoreActive) {
+    emit('add-microsoft');
+    return;
+  }
   isAuthorizing.value = true;
   window.setTimeout(() => {
     const newAcc: Account = {
@@ -399,7 +410,45 @@ const thirdTheme = computed(() => (thirdAccount.value ? getCardTheme(thirdAccoun
               使用微软官方 OAuth2 登录协议，安全同步 Minecraft 皮肤与角色数据。
             </p>
           </div>
-          <div class="pt-2 space-y-2 max-w-xs mx-auto">
+          <div
+            v-if="auraCoreActive && msaState"
+            class="max-w-xs mx-auto space-y-2"
+          >
+            <div
+              v-if="msaState.userCode"
+              class="p-3 rounded-md bg-[#121315] border border-[#24262b] space-y-1.5"
+            >
+              <div class="text-[10px] text-slate-400">在浏览器中访问以下地址并输入代码</div>
+              <a
+                :href="msaState.verificationUrl"
+                target="_blank"
+                rel="noreferrer"
+                class="block text-xs font-mono text-emerald-400 hover:underline break-all"
+              >{{ msaState.verificationUrl }}</a>
+              <div class="flex items-center justify-between gap-2 pt-1">
+                <code class="px-2.5 py-1.5 rounded bg-[#1b1c1d] border border-[#3e3f41] text-sm font-mono font-bold tracking-[0.2em] text-white select-text">
+                  {{ msaState.userCode }}
+                </code>
+                <button
+                  class="px-2.5 py-1.5 rounded bg-[#1f2125] hover:bg-[#272a2f] border border-[#2e3137] text-xs text-slate-300 cursor-pointer"
+                  @click="copyMsaCode"
+                >
+                  复制代码
+                </button>
+              </div>
+            </div>
+            <div class="flex items-center justify-center gap-2 text-xs text-slate-400">
+              <div
+                v-if="msaState.active"
+                class="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"
+              />
+              <span :class="msaState.active ? '' : 'text-amber-400'">{{ msaState.message }}</span>
+            </div>
+            <BedrockButton variant="subtle" size="sm" class="w-full" @click="mode = 'view'">
+              返回账户列表
+            </BedrockButton>
+          </div>
+          <div v-else class="pt-2 space-y-2 max-w-xs mx-auto">
             <button
               :disabled="isAuthorizing"
               class="w-full py-2.5 rounded-md bg-[#2ea44f] hover:bg-[#34b558] text-white font-semibold text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-70"

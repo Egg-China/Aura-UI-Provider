@@ -270,6 +270,7 @@ export const DEFAULT_SETTINGS: LauncherSettings = {
   proxyUsername: '',
   proxyPassword: '',
   selectedUiFrontend: 'dev.aura.modern-ui',
+  coreEngine: 'hmcl',
   backgroundStyle: 'particles',
   uiFontScale: 100,
   aprilFools: false,

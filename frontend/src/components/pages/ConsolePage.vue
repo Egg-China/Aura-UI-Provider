@@ -1,10 +1,20 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { Terminal, Copy, Search, Check } from 'lucide-vue-next';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { Terminal, Copy, Search, Check, Square, Activity } from 'lucide-vue-next';
 import BedrockButton from '../BedrockButton.vue';
+import { auraCoreInstanceLogs, auraCoreStopInstance } from '../../bridge';
+
+interface ConsoleLine {
+  time: string;
+  level: 'INFO' | 'WARN' | 'ERROR';
+  thread: string;
+  text: string;
+}
 
 const props = defineProps<{
   instanceName: string;
+  instanceId: string;
+  engineActive: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -14,10 +24,15 @@ const emit = defineEmits<{
 const filterLevel = ref<'ALL' | 'INFO' | 'WARN' | 'ERROR'>('ALL');
 const search = ref('');
 const copied = ref(false);
+const liveLines = ref<ConsoleLine[]>([]);
+const gameRunning = ref(false);
+const isStopping = ref(false);
+let pollTimer: number | undefined;
+let pollInFlight = false;
 
 const levels: ('ALL' | 'INFO' | 'WARN' | 'ERROR')[] = ['ALL', 'INFO', 'WARN', 'ERROR'];
 
-const mockLogs = [
+const mockLogs: ConsoleLine[] = [
   { time: '17:40:01', level: 'INFO', thread: 'main', text: `Aura Launcher v2.4.0 (HMCL Layout) initialized for ${props.instanceName}.` },
   { time: '17:40:02', level: 'INFO', thread: 'main', text: 'Checking Java 21 Temurin-21.0.3 64-Bit HotSpot Virtual Machine...' },
   { time: '17:40:03', level: 'INFO', thread: 'FabricLoader', text: 'Fabric Loader 0.16.9 successfully initialized 38 mods.' },
@@ -27,8 +42,80 @@ const mockLogs = [
   { time: '17:40:07', level: 'INFO', thread: 'MinecraftClient', text: 'Sound engine loaded. Joined singleplayer world.' },
 ];
 
+function normalizeLevel(raw: string): ConsoleLine['level'] {
+  const value = raw.toLowerCase();
+  if (value.includes('err') || value.includes('fatal')) return 'ERROR';
+  if (value.includes('warn')) return 'WARN';
+  return 'INFO';
+}
+
+async function pollAuraCoreLogs() {
+  if (pollInFlight) return;
+  pollInFlight = true;
+  try {
+    const reply = await auraCoreInstanceLogs(props.instanceId);
+    gameRunning.value = reply.running;
+    liveLines.value = reply.logs.map((entry) => ({
+      time: 'live',
+      level: normalizeLevel(entry.level),
+      thread: 'AuraCore',
+      text: entry.line,
+    }));
+  } catch (error) {
+    emit('show-toast', `读取 AuraCore 日志失败: ${String(error)}`);
+  } finally {
+    pollInFlight = false;
+  }
+}
+
+function startPolling() {
+  stopPolling();
+  liveLines.value = [];
+  void pollAuraCoreLogs();
+  pollTimer = window.setInterval(() => void pollAuraCoreLogs(), 1500);
+}
+
+function stopPolling() {
+  if (pollTimer !== undefined) {
+    window.clearInterval(pollTimer);
+    pollTimer = undefined;
+  }
+}
+
+async function handleStopGame() {
+  isStopping.value = true;
+  try {
+    await auraCoreStopInstance(props.instanceId);
+    emit('show-toast', '已请求 AuraCore 终止游戏进程');
+    await pollAuraCoreLogs();
+  } catch (error) {
+    emit('show-toast', `停止游戏失败: ${String(error)}`);
+  } finally {
+    isStopping.value = false;
+  }
+}
+
+watch(
+  () => [props.engineActive, props.instanceId] as const,
+  ([active]) => {
+    if (active) {
+      startPolling();
+    } else {
+      stopPolling();
+    }
+  },
+);
+
+onMounted(() => {
+  if (props.engineActive) startPolling();
+});
+
+onUnmounted(stopPolling);
+
+const displayLogs = computed(() => (props.engineActive ? liveLines.value : mockLogs));
+
 const filteredLogs = computed(() =>
-  mockLogs.filter((l) => {
+  displayLogs.value.filter((l) => {
     const matchLevel = filterLevel.value === 'ALL' || l.level === filterLevel.value;
     const matchSearch =
       l.text.toLowerCase().includes(search.value.toLowerCase()) ||
@@ -38,7 +125,7 @@ const filteredLogs = computed(() =>
 );
 
 function handleCopy() {
-  const text = mockLogs.map((l) => `[${l.time}] [${l.thread}/${l.level}]: ${l.text}`).join('\n');
+  const text = displayLogs.value.map((l) => `[${l.time}] [${l.thread}/${l.level}]: ${l.text}`).join('\n');
   void navigator.clipboard.writeText(text);
   copied.value = true;
   window.setTimeout(() => {
@@ -55,11 +142,28 @@ function handleCopy() {
         <h1 class="text-xl font-bold text-white flex items-center gap-2">
           <Terminal class="w-5 h-5 text-emerald-400" />
           <span>实时游戏日志与控制台 (Game Logs)</span>
+          <span
+            v-if="engineActive"
+            class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold border"
+            :class="gameRunning
+              ? 'bg-[#0f2e1a] text-emerald-400 border-[#29683e]'
+              : 'bg-[#241a10] text-amber-400 border-[#4a3417]'"
+          >
+            <Activity class="w-3 h-3" />
+            {{ gameRunning ? 'AuraCore 运行中' : '进程未运行' }}
+          </span>
         </h1>
-        <p class="text-xs text-slate-400 mt-0.5">当前追踪实例: {{ instanceName }}</p>
+        <p class="text-xs text-slate-400 mt-0.5">
+          当前追踪实例: {{ instanceName }}
+          <span v-if="engineActive" class="font-mono text-slate-500">({{ instanceId }})</span>
+        </p>
       </div>
 
       <div class="flex items-center gap-2">
+        <BedrockButton v-if="engineActive" variant="danger" size="sm" :disabled="isStopping || !gameRunning" @click="handleStopGame">
+          <Square class="w-3.5 h-3.5 mr-1" />
+          <span>{{ isStopping ? '停止中...' : '停止游戏' }}</span>
+        </BedrockButton>
         <BedrockButton variant="grey" size="sm" @click="handleCopy">
           <Check v-if="copied" class="w-3.5 h-3.5 mr-1 text-emerald-400" />
           <Copy v-else class="w-3.5 h-3.5 mr-1" />
@@ -96,6 +200,9 @@ function handleCopy() {
       </div>
 
       <div class="flex-1 p-4 bg-[#141516] overflow-y-auto font-mono text-xs space-y-1 select-text">
+        <div v-if="engineActive && filteredLogs.length === 0" class="text-slate-500">
+          正在等待 AuraCore 输出日志...
+        </div>
         <div v-for="(l, i) in filteredLogs" :key="i" class="flex items-start gap-2 leading-relaxed">
           <span class="text-slate-500 shrink-0">[{{ l.time }}]</span>
           <span

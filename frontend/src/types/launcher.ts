@@ -115,6 +115,7 @@ export interface LauncherSettings {
   proxyUsername: string;
   proxyPassword: string;
   selectedUiFrontend: 'javafx' | 'dev.aura.modern-ui';
+  coreEngine: 'hmcl' | 'auracore';
   backgroundStyle: 'particles' | 'gradient' | 'plain';
   uiFontScale: number;
   aprilFools: boolean;

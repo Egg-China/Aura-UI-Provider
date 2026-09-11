@@ -16,19 +16,25 @@ import {
   Sun,
   Moon,
   Monitor,
+  Boxes,
+  Cog,
 } from 'lucide-vue-next';
 import BedrockButton from '../BedrockButton.vue';
 import type { LauncherSettings } from '../../types/launcher';
+import type { AuraCoreStatus } from '../../bridge';
 
 type SettingSection = 'game' | 'java' | 'download' | 'general' | 'appearance' | 'about';
 
 defineProps<{
   settings: LauncherSettings;
+  auraCoreStatus?: AuraCoreStatus | null;
+  isMigratingAuraCore?: boolean;
 }>();
 
 const emit = defineEmits<{
   (event: 'update-settings', patch: Partial<LauncherSettings>): void;
   (event: 'show-toast', message: string): void;
+  (event: 'migrate-auracore'): void;
 }>();
 
 const activeSection = ref<SettingSection>('game');
@@ -116,6 +122,11 @@ const backgroundStyles: { id: LauncherSettings['backgroundStyle']; name: string;
   { id: 'particles', name: '粒子动效背景', desc: 'Aura 灵动粒子 + 视差' },
   { id: 'gradient', name: '纯渐变背景', desc: '低负载渐变晕染' },
   { id: 'plain', name: '纯色极简背景', desc: '极致性能，无装饰' },
+];
+
+const coreEngines: { id: LauncherSettings['coreEngine']; name: string; desc: string }[] = [
+  { id: 'hmcl', name: 'HMCL Java 核心 (默认)', desc: '内建 Java 引擎，功能完整，随时可切回' },
+  { id: 'auracore', name: 'AuraCore 原生核心', desc: 'C++/Qt 原生引擎，独立数据目录 (实验性)' },
 ];
 
 const uiFrontends: { id: LauncherSettings['selectedUiFrontend']; name: string; desc: string }[] = [
@@ -615,6 +626,31 @@ function handleCleanCache() {
           <div class="mc-panel p-3.5 space-y-2">
             <div class="flex items-center justify-between">
               <div>
+                <span class="text-xs font-bold text-white block">启动器核心 (Launcher Core)</span>
+                <span class="text-[10px] text-slate-400">选择实例启动与数据管理使用的引擎后端</span>
+              </div>
+              <Cog class="w-4 h-4 text-[#2ea44f] shrink-0" />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                v-for="ce in coreEngines"
+                :key="ce.id"
+                class="p-2.5 rounded border text-left cursor-pointer transition-colors"
+                :class="settings.coreEngine === ce.id
+                  ? 'bg-[#1e2920] border-[#2ea44f] text-emerald-400 font-semibold'
+                  : 'bg-[#121315] border-[#24262b] text-slate-300 hover:bg-[#1a1c1f]'"
+                @click="emit('update-settings', { coreEngine: ce.id })"
+              >
+                <div class="font-semibold text-xs text-white">{{ ce.name }}</div>
+                <div class="text-[10px] text-slate-400 mt-0.5">{{ ce.desc }}</div>
+              </button>
+            </div>
+            <span class="text-[10px] text-slate-500 block font-mono">重启启动器后生效；AuraCore 未就绪时启动将自动回退 HMCL</span>
+          </div>
+
+          <div class="mc-panel p-3.5 space-y-2">
+            <div class="flex items-center justify-between">
+              <div>
                 <span class="text-xs font-bold text-white block">界面前端 (UI Frontend)</span>
                 <span class="text-[10px] text-slate-400">Aura 双 UI 架构：内建 JavaFX 永远可作恢复界面</span>
               </div>
@@ -915,6 +951,60 @@ function handleCleanCache() {
             >
               Build 2026.08.28 • Next Channel
             </div>
+          </div>
+
+          <div class="mc-panel p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-white block border-b border-[#24262b] pb-2">
+                AuraCore 原生核心状态
+              </span>
+              <Boxes class="w-4 h-4 text-emerald-400 shrink-0" />
+            </div>
+
+            <div v-if="auraCoreStatus" class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div class="p-2 rounded bg-[#121315] border border-[#24262b] text-slate-300">
+                <span class="text-slate-500 text-[10px] block">当前引擎</span>
+                <span class="font-semibold" :class="auraCoreStatus.engine === 'auracore' ? 'text-emerald-400' : 'text-slate-200'">
+                  {{ auraCoreStatus.engine }}
+                </span>
+              </div>
+              <div class="p-2 rounded bg-[#121315] border border-[#24262b] text-slate-300">
+                <span class="text-slate-500 text-[10px] block">后端状态</span>
+                <span class="font-semibold" :class="auraCoreStatus.backendRunning ? 'text-emerald-400' : 'text-amber-400'">
+                  {{ auraCoreStatus.backendRunning ? '运行中' : '未启动' }}
+                </span>
+              </div>
+              <div class="p-2 rounded bg-[#121315] border border-[#24262b] text-slate-300">
+                <span class="text-slate-500 text-[10px] block">原生库</span>
+                <span class="font-semibold" :class="auraCoreStatus.libraryAvailable ? 'text-emerald-400' : 'text-rose-400'">
+                  {{ auraCoreStatus.libraryAvailable ? '已就绪' : '未找到' }}
+                </span>
+              </div>
+              <div class="p-2 rounded bg-[#121315] border border-[#24262b] text-slate-300">
+                <span class="text-slate-500 text-[10px] block">迁移白名单</span>
+                <span class="font-semibold text-slate-200">{{ auraCoreStatus.migrationAllowList.length }} 项</span>
+              </div>
+              <div class="col-span-2 p-2 rounded bg-[#121315] border border-[#24262b] text-slate-300">
+                <span class="text-slate-500 text-[10px] block">数据目录</span>
+                <span class="font-semibold text-slate-200 break-all">{{ auraCoreStatus.dataDirectory }}</span>
+              </div>
+              <div class="col-span-2 p-2 rounded bg-[#121315] border border-[#24262b] text-slate-300">
+                <span class="text-slate-500 text-[10px] block">原生库路径</span>
+                <span class="font-semibold text-slate-200 break-all">{{ auraCoreStatus.libraryPath || '未定位' }}</span>
+              </div>
+            </div>
+            <div v-else class="text-xs text-slate-500 font-mono">正在读取 AuraCore 引擎状态...</div>
+
+            <BedrockButton
+              variant="green"
+              size="sm"
+              :disabled="isMigratingAuraCore || !auraCoreStatus"
+              @click="emit('migrate-auracore')"
+            >
+              <Folder class="w-3.5 h-3.5 mr-1" />
+              <span>{{ isMigratingAuraCore ? '正在迁移...' : '迁移白名单设置到 AuraCore' }}</span>
+            </BedrockButton>
+            <span class="text-[10px] text-slate-500 block font-mono">仅复制镜像/并发/超时/代理设置；插件与安全状态永不迁移</span>
           </div>
 
           <div class="mc-panel p-4 space-y-2.5">

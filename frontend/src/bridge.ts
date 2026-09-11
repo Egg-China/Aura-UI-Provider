@@ -40,3 +40,161 @@ export function parseSnapshot(raw: string): LauncherSnapshot | null {
         return null;
     }
 }
+
+/// AuraCore native-engine status returned by `core.auracore.status`.
+export interface AuraCoreStatus {
+    engine: string;
+    dataDirectory: string;
+    libraryPath: string;
+    libraryAvailable: boolean;
+    backendRunning: boolean;
+    migrationAllowList: string[];
+}
+
+/// One backend instance entry from `core.auracore.instance.list`.
+export interface AuraCoreInstance {
+    id: string;
+    name: string;
+    dir?: string;
+    icon?: string;
+    group?: string;
+    lastLaunch?: number;
+    gameVersion?: string;
+}
+
+/// One backend account entry from `core.auracore.accounts.list`.
+export interface AuraCoreAccount {
+    profileName: string;
+    type: string;
+    internalId: string;
+    hasProfile: boolean;
+}
+
+/// Task snapshot from `core.auracore.task.status`.
+export interface AuraCoreTaskStatus {
+    id: string;
+    type: string;
+    state: 'running' | 'succeeded' | 'failed' | 'aborted';
+    progress: number;
+    total: number;
+    status: string;
+    succeeded?: boolean;
+    error?: string;
+}
+
+/// Log tail reply from `core.auracore.instance.logs`.
+export interface AuraCoreLogReply {
+    id: string;
+    running: boolean;
+    total?: number;
+    logs: { level: string; line: string }[];
+}
+
+/// Device-code login info from `core.auracore.auth.msa.info`.
+export interface AuraCoreMsaInfo {
+    id: string;
+    codeIssued: boolean;
+    verificationUrl?: string;
+    userCode?: string;
+    expiresIn?: number;
+}
+
+/// Rejects when a successful bridge reply carries the backend `{ error }` envelope.
+function rejectBackendError<T>(reply: T): T {
+    if (typeof reply === 'object' && reply !== null) {
+        const candidate = reply as Record<string, unknown>;
+        if (typeof candidate.error === 'string') {
+            throw new Error(candidate.error);
+        }
+    }
+    return reply;
+}
+
+/// Reads the AuraCore engine, library, and migration status.
+export async function auraCoreStatus(): Promise<AuraCoreStatus> {
+    return rejectBackendError(await bridgeRequest<AuraCoreStatus>('core.auracore.status'));
+}
+
+/// Lists the instances owned by the AuraCore backend data directory.
+export async function auraCoreListInstances(): Promise<AuraCoreInstance[]> {
+    return rejectBackendError(await bridgeRequest<AuraCoreInstance[]>('core.auracore.instance.list'));
+}
+
+/// Lists the accounts stored inside the AuraCore backend.
+export async function auraCoreListAccounts(): Promise<AuraCoreAccount[]> {
+    return rejectBackendError(await bridgeRequest<AuraCoreAccount[]>('core.auracore.accounts.list'));
+}
+
+/// Creates a vanilla instance and returns the tracked backend task id.
+export async function auraCoreCreateInstance(name: string, version: string, group?: string): Promise<string> {
+    return rejectBackendError(
+        await bridgeRequest<string>('core.auracore.instance.create', { name, version, group: group ?? null }),
+    );
+}
+
+/// Renames one AuraCore instance.
+export async function auraCoreRenameInstance(id: string, name: string): Promise<void> {
+    rejectBackendError(await bridgeRequest('core.auracore.instance.rename', { id, name }));
+}
+
+/// Deletes one AuraCore instance directory.
+export async function auraCoreDeleteInstance(id: string): Promise<void> {
+    rejectBackendError(await bridgeRequest('core.auracore.instance.delete', { id }));
+}
+
+/// Tails live output of one AuraCore instance.
+export async function auraCoreInstanceLogs(id: string, maxLines = 300): Promise<AuraCoreLogReply> {
+    return rejectBackendError(await bridgeRequest<AuraCoreLogReply>('core.auracore.instance.logs', { id, maxLines }));
+}
+
+/// Terminates one running AuraCore game process.
+export async function auraCoreStopInstance(id: string): Promise<void> {
+    rejectBackendError(await bridgeRequest('core.auracore.instance.stop', { id }));
+}
+
+/// Reads one tracked AuraCore task.
+export async function auraCoreTaskStatus(taskId: string): Promise<AuraCoreTaskStatus> {
+    return rejectBackendError(await bridgeRequest<AuraCoreTaskStatus>('core.auracore.task.status', { taskId }));
+}
+
+/// Adds an offline account to the AuraCore backend.
+export async function auraCoreAddOfflineAccount(username: string): Promise<void> {
+    rejectBackendError(await bridgeRequest('core.auracore.accounts.add-offline', { username }));
+}
+
+/// Removes one AuraCore account by profile name.
+export async function auraCoreRemoveAccount(profile: string): Promise<void> {
+    rejectBackendError(await bridgeRequest('core.auracore.accounts.remove', { profile }));
+}
+
+/// Selects the AuraCore account used by future launches.
+export async function auraCoreSetDefaultAccount(profile: string): Promise<void> {
+    rejectBackendError(await bridgeRequest('core.auracore.accounts.set-default', { profile }));
+}
+
+/// Starts a Microsoft device-code login and returns its task id.
+export async function auraCoreBeginMsaLogin(): Promise<string> {
+    const reply = rejectBackendError(
+        await bridgeRequest<{ started: boolean; taskId?: string }>('core.auracore.auth.msa.begin'),
+    );
+    if (!reply.started || typeof reply.taskId !== 'string') {
+        throw new Error('AuraCore did not start the Microsoft login flow');
+    }
+    return reply.taskId;
+}
+
+/// Reads device-code login info for one login task.
+export async function auraCoreMsaInfo(taskId: string): Promise<AuraCoreMsaInfo> {
+    return rejectBackendError(await bridgeRequest<AuraCoreMsaInfo>('core.auracore.auth.msa.info', { taskId }));
+}
+
+/// Copies the allowlisted launcher settings into AuraCore.
+export async function auraCoreMigrate(): Promise<Record<string, string>> {
+    return rejectBackendError(await bridgeRequest<Record<string, string>>('core.auracore.migrate'));
+}
+
+/// Launches one instance, returning the AuraCore task id when the native engine handles it.
+export async function launchInstance(id: string): Promise<string | null> {
+    const reply = rejectBackendError(await bridgeRequest<unknown>('core.instance.launch', { id }));
+    return typeof reply === 'string' && reply.length > 0 ? reply : null;
+}
