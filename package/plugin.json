@@ -2,7 +2,7 @@
   "schemaVersion": 5,
   "id": "dev.aura.modern-ui",
   "name": "Aura Modern UI",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "native",
   "entrypoint": "bin/aura-ui-provider.exe",
   "permissions": [
