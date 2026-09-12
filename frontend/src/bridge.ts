@@ -18,8 +18,33 @@ export interface LauncherSnapshot {
     pluginContributions?: PluginContribution[];
 }
 
+/// Methods accepted by the supervised native UI transport.
+///
+/// The provider mirrors the launcher allowlist so unavailable actions fail with a UI error instead
+/// of sending a protocol violation that terminates the whole native session.
+const NATIVE_BRIDGE_METHODS = new Set([
+    'core.snapshot.get',
+    'core.instance.select',
+    'core.instance.launch',
+    'core.account.select',
+    'core.asset.get',
+    'core.ui.use-javafx',
+    'core.app.shutdown',
+    'core.auracore.status',
+    'core.auracore.instance.list',
+    'core.auracore.task.status',
+    'core.auracore.accounts.list',
+    'core.auracore.auth.msa.begin',
+    'core.auracore.auth.msa.info',
+]);
+
+const isNativeRuntime = '__TAURI_INTERNALS__' in (globalThis as Record<string, unknown>);
+
 /// Sends one `core.*` request through the native transport, returning parsed JSON.
 export async function bridgeRequest<T = unknown>(method: string, params: unknown = null): Promise<T> {
+    if (isNativeRuntime && !NATIVE_BRIDGE_METHODS.has(method)) {
+        throw new Error('Modern UI 尚未开放此启动器操作');
+    }
     const { invoke } = await import('@tauri-apps/api/core');
     const raw = await invoke<string>('frontend_request', {
         method,
@@ -44,11 +69,11 @@ export function parseSnapshot(raw: string): LauncherSnapshot | null {
 /// AuraCore native-engine status returned by `core.auracore.status`.
 export interface AuraCoreStatus {
     engine: string;
-    dataDirectory: string;
-    libraryPath: string;
+    dataDirectory?: string;
+    libraryPath?: string;
     libraryAvailable: boolean;
     backendRunning: boolean;
-    migrationAllowList: string[];
+    migrationAllowList?: string[];
 }
 
 /// One backend instance entry from `core.auracore.instance.list`.
@@ -81,7 +106,7 @@ export interface AuraCoreTaskStatus {
     state: 'running' | 'succeeded' | 'failed' | 'aborted';
     progress: number;
     total: number;
-    status: string;
+    status?: string;
     succeeded?: boolean;
     error?: string;
 }

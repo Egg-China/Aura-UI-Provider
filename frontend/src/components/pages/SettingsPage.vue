@@ -982,15 +982,15 @@ function handleCleanCache() {
               </div>
               <div class="p-2 rounded bg-[#121315] border border-[#24262b] text-slate-300">
                 <span class="text-slate-500 text-[10px] block">迁移白名单</span>
-                <span class="font-semibold text-slate-200">{{ auraCoreStatus.migrationAllowList.length }} 项</span>
+                <span class="font-semibold text-slate-200">{{ auraCoreStatus.migrationAllowList?.length ?? '已隐藏（未授权）' }} 项</span>
               </div>
               <div class="col-span-2 p-2 rounded bg-[#121315] border border-[#24262b] text-slate-300">
                 <span class="text-slate-500 text-[10px] block">数据目录</span>
-                <span class="font-semibold text-slate-200 break-all">{{ auraCoreStatus.dataDirectory }}</span>
+                <span class="font-semibold text-slate-200 break-all">{{ auraCoreStatus.dataDirectory ?? '已隐藏（未授权）' }}</span>
               </div>
               <div class="col-span-2 p-2 rounded bg-[#121315] border border-[#24262b] text-slate-300">
                 <span class="text-slate-500 text-[10px] block">原生库路径</span>
-                <span class="font-semibold text-slate-200 break-all">{{ auraCoreStatus.libraryPath || '未定位' }}</span>
+                <span class="font-semibold text-slate-200 break-all">{{ auraCoreStatus.libraryPath ?? '已隐藏（未授权）' }}</span>
               </div>
             </div>
             <div v-else class="text-xs text-slate-500 font-mono">正在读取 AuraCore 引擎状态...</div>

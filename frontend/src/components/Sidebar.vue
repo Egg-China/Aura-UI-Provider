@@ -16,7 +16,7 @@ defineProps<{
   activeTab: NavTab;
   isCollapsed: boolean;
   pluginCount: number;
-  currentAccount: Account;
+  currentAccount?: Account;
   contributions: PluginContribution[];
 }>();
 
@@ -114,13 +114,22 @@ const generalTabs: { id: NavTab; label: string; icon: unknown }[] = [
         @click="emit('open-accounts')"
       >
         <img
+          v-if="currentAccount"
           :src="currentAccount.skinUrl"
           :alt="currentAccount.username"
           class="w-7 h-7 rounded pixelated bg-black/30 border border-white/10 shrink-0"
           @error="($event.target as HTMLImageElement).style.display = 'none'"
         />
+        <div
+          v-else
+          class="w-7 h-7 rounded bg-black/30 border border-white/10 flex items-center justify-center shrink-0"
+        >
+          <Users2 class="w-4 h-4 text-slate-500" />
+        </div>
         <div class="min-w-0 flex-1">
-          <div class="text-[11px] font-semibold text-slate-200 truncate">{{ currentAccount.username }}</div>
+          <div class="text-[11px] font-semibold text-slate-200 truncate">
+            {{ currentAccount?.username ?? '未添加账户' }}
+          </div>
           <div class="text-[9px] text-slate-500">账户管理</div>
         </div>
       </button>
@@ -136,11 +145,18 @@ const generalTabs: { id: NavTab; label: string; icon: unknown }[] = [
         @click="emit('open-accounts')"
       >
         <img
+          v-if="currentAccount"
           :src="currentAccount.skinUrl"
           :alt="currentAccount.username"
           class="w-full h-full pixelated bg-black/30"
           @error="($event.target as HTMLImageElement).style.display = 'none'"
         />
+        <div
+          v-else
+          class="w-full h-full bg-black/30 flex items-center justify-center"
+        >
+          <Users2 class="w-4 h-4 text-slate-500" />
+        </div>
       </button>
       <span class="text-[10px] text-slate-500 font-mono">W3</span>
     </div>

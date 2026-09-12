@@ -48,6 +48,7 @@ import {
   auraCoreTaskStatus,
   launchInstance,
 } from './bridge';
+import { availableMicrosoftSuggestions, microsoftAccountSuggestions } from './accountSuggestions';
 import type {
   AuraCoreAccount,
   AuraCoreInstance,
@@ -66,9 +67,11 @@ import type {
 
 const activeTab = ref<NavTab>('home');
 const isSidebarCollapsed = ref(false);
+const isNativeRuntime = '__TAURI_INTERNALS__' in (globalThis as Record<string, unknown>);
 const instances = ref<MinecraftInstance[]>(INITIAL_INSTANCES);
 const currentInstance = ref<MinecraftInstance>(INITIAL_INSTANCES[0]);
-const accounts = ref<Account[]>(INITIAL_ACCOUNTS);
+const accounts = ref<Account[]>(isNativeRuntime ? [] : INITIAL_ACCOUNTS);
+const hmclMicrosoftSuggestions = ref<string[]>([]);
 const plugins = ref<LauncherPlugin[]>(MOCK_PLUGINS);
 const pluginContributions = ref<PluginContribution[]>([]);
 const mods = ref<ModItem[]>(MOCK_MODS);
@@ -79,6 +82,7 @@ const launchTaskStatusState = ref<AuraCoreTaskStatus | null>(null);
 const msaLoginState = ref<{ active: boolean; verificationUrl?: string; userCode?: string; message: string } | null>(null);
 let launchTaskTimer: number | undefined;
 let msaLoginTimer: number | undefined;
+let msaLoginGeneration = 0;
 
 const isLaunching = ref(false);
 const isLaunchModalOpen = ref(false);
@@ -166,6 +170,16 @@ function stopLaunchTaskPolling() {
 }
 
 function updateSettings(patch: Partial<LauncherSettings>) {
+  if (isNativeRuntime && (patch.coreEngine !== undefined || patch.selectedUiFrontend !== undefined)) {
+    const localPatch = { ...patch };
+    delete localPatch.coreEngine;
+    delete localPatch.selectedUiFrontend;
+    settings.value = { ...settings.value, ...localPatch };
+    showToast('Modern UI 暂不支持修改核心或界面设置，请使用 JavaFX 界面');
+    return;
+  }
+
+  const previousCoreEngine = settings.value.coreEngine;
   settings.value = { ...settings.value, ...patch };
   if (!isTauri.value) return;
   if (patch.selectedUiFrontend !== undefined) {
@@ -181,13 +195,19 @@ function updateSettings(patch: Partial<LauncherSettings>) {
             ? '已切换为 AuraCore 原生核心，重启启动器后生效'
             : '已切换为 HMCL Java 核心，重启启动器后生效',
         );
+        accounts.value = [];
         void refreshAuraCoreStatus();
         if (patch.coreEngine === 'auracore') {
           void refreshAuraCoreData();
           void handleMigrateAuraCore();
         }
       })
-      .catch((error) => showToast(`启动器核心切换失败: ${String(error)}`));
+      .catch((error) => {
+        if (patch.coreEngine !== undefined) {
+          settings.value = { ...settings.value, coreEngine: previousCoreEngine };
+        }
+        showToast(`启动器核心切换失败: ${String(error)}`);
+      });
   }
 }
 
@@ -379,6 +399,11 @@ function addAccount(account: Account) {
       .catch((error) => showToast(`添加 AuraCore 账户失败: ${String(error)}`));
     return;
   }
+  if (isNativeRuntime) {
+    showToast('Modern UI 暂不支持直接添加 HMCL 账户，请使用 JavaFX 界面');
+    return;
+  }
+
   accounts.value = accounts.value.map((a) => ({ ...a, isActive: false }));
   accounts.value = [...accounts.value, account];
   showToast(`已添加账户: ${account.username}`);
@@ -419,6 +444,12 @@ const isTauri = ref(false);
 const navTabs: NavTab[] = ['home', 'instances', 'mods', 'download', 'plugins', 'settings', 'multiplayer', 'console'];
 
 const auraCoreActive = computed(() => isTauri.value && settings.value.coreEngine === 'auracore');
+const auraCoreMicrosoftSuggestions = computed(() =>
+  availableMicrosoftSuggestions(hmclMicrosoftSuggestions.value, accounts.value),
+);
+const currentAccount = computed<Account | undefined>(() =>
+  accounts.value.find((account) => account.isActive) ?? accounts.value.at(0),
+);
 
 async function waitForTauri(timeoutMilliseconds = 5000): Promise<boolean> {
   const deadline = Date.now() + timeoutMilliseconds;
@@ -539,6 +570,7 @@ async function refreshAuraCoreData() {
   try {
     accounts.value = hydrateAuraCoreAccounts(await auraCoreListAccounts());
   } catch (error) {
+    accounts.value = [];
     showToast(`读取 AuraCore 账户失败: ${String(error)}`);
   }
 }
@@ -583,29 +615,37 @@ function hydrateSettings(raw: unknown): Partial<LauncherSettings> {
 async function hydrateFromLauncher() {
   const { invoke } = await import('@tauri-apps/api/core');
   const snapshot = parseSnapshot(await invoke<string>('get_snapshot'));
-  if (!snapshot) return;
+  if (!snapshot) {
+    accounts.value = [];
+    hmclMicrosoftSuggestions.value = [];
+    return;
+  }
 
   const nextInstances = hydrateInstances(snapshot.instances);
   if (nextInstances.length > 0) {
     instances.value = nextInstances;
     currentInstance.value = nextInstances[0];
   }
+  hmclMicrosoftSuggestions.value = microsoftAccountSuggestions(snapshot.accounts);
   const nextAccounts = hydrateAccounts(snapshot.accounts);
-  if (nextAccounts.length > 0) {
-    accounts.value = nextAccounts.some((account) => account.isActive)
-      ? nextAccounts
-      : nextAccounts.map((account, index) => ({ ...account, isActive: index === 0 }));
-  }
   const settingsPatch = hydrateSettings(snapshot.settings);
   if (Object.keys(settingsPatch).length > 0) {
     settings.value = { ...settings.value, ...settingsPatch };
   }
-  if (Array.isArray(snapshot.pluginContributions)) {
+  if (settings.value.coreEngine !== 'auracore' && nextAccounts.length > 0) {
+    accounts.value = nextAccounts.some((account) => account.isActive)
+      ? nextAccounts
+      : nextAccounts.map((account, index) => ({ ...account, isActive: index === 0 }));
+  }
+  if (isNativeRuntime) {
+    pluginContributions.value = [];
+  } else if (Array.isArray(snapshot.pluginContributions)) {
     pluginContributions.value = snapshot.pluginContributions.filter(
       (contribution) => contribution && typeof contribution.id === 'string' && typeof contribution.label === 'string',
     );
   }
   if (settings.value.coreEngine === 'auracore') {
+    accounts.value = [];
     await refreshAuraCoreData();
   }
 }
@@ -624,47 +664,64 @@ async function runPluginContribution(contribution: PluginContribution) {
 }
 
 function stopMsaLoginPolling() {
+  msaLoginGeneration += 1;
   if (msaLoginTimer !== undefined) {
-    window.clearInterval(msaLoginTimer);
+    window.clearTimeout(msaLoginTimer);
     msaLoginTimer = undefined;
   }
 }
 
+function scheduleMsaLoginPolling(taskId: string, generation: number, delay = 0) {
+  msaLoginTimer = window.setTimeout(async () => {
+    if (generation !== msaLoginGeneration) return;
+    try {
+      const info = await auraCoreMsaInfo(taskId);
+      if (generation !== msaLoginGeneration) return;
+      if (info.codeIssued && info.userCode && !msaLoginState.value?.userCode) {
+        msaLoginState.value = {
+          active: true,
+          verificationUrl: info.verificationUrl,
+          userCode: info.userCode,
+          message: '等待浏览器完成授权...',
+        };
+      }
+      const status = await auraCoreTaskStatus(taskId);
+      if (generation !== msaLoginGeneration) return;
+      if (status.state === 'succeeded') {
+        stopMsaLoginPolling();
+        msaLoginState.value = { active: true, message: '正在同步账户...' };
+        showToast('微软账户授权成功');
+        await refreshAuraCoreData();
+        msaLoginState.value = null;
+        return;
+      }
+      if (status.state === 'failed' || status.state === 'aborted') {
+        stopMsaLoginPolling();
+        msaLoginState.value = { active: false, message: `授权失败: ${status.error ?? status.state}` };
+        showToast(`微软授权失败: ${status.error ?? status.state}`);
+        return;
+      }
+      scheduleMsaLoginPolling(taskId, generation, 1500);
+    } catch (error) {
+      if (generation !== msaLoginGeneration) return;
+      stopMsaLoginPolling();
+      msaLoginState.value = { active: false, message: `授权查询失败: ${String(error)}` };
+    }
+  }, delay);
+}
+
 function startMicrosoftDeviceLogin() {
-  if (!auraCoreActive.value) return;
+  if (!auraCoreActive.value || msaLoginState.value?.active) return;
   stopMsaLoginPolling();
+  const generation = msaLoginGeneration;
   msaLoginState.value = { active: true, message: '正在向微软申请设备码...' };
   void auraCoreBeginMsaLogin()
     .then((taskId) => {
-      msaLoginTimer = window.setInterval(async () => {
-        try {
-          const info = await auraCoreMsaInfo(taskId);
-          if (info.codeIssued && info.userCode && !msaLoginState.value?.userCode) {
-            msaLoginState.value = {
-              active: true,
-              verificationUrl: info.verificationUrl,
-              userCode: info.userCode,
-              message: '等待浏览器完成授权...',
-            };
-          }
-          const status = await auraCoreTaskStatus(taskId);
-          if (status.state === 'succeeded') {
-            stopMsaLoginPolling();
-            msaLoginState.value = null;
-            showToast('微软账户授权成功');
-            void refreshAuraCoreData();
-          } else if (status.state === 'failed' || status.state === 'aborted') {
-            stopMsaLoginPolling();
-            msaLoginState.value = { active: false, message: `授权失败: ${status.error ?? status.state}` };
-            showToast(`微软授权失败: ${status.error ?? status.state}`);
-          }
-        } catch (error) {
-          stopMsaLoginPolling();
-          msaLoginState.value = { active: false, message: `授权查询失败: ${String(error)}` };
-        }
-      }, 1500);
+      if (generation !== msaLoginGeneration) return;
+      scheduleMsaLoginPolling(taskId, generation);
     })
     .catch((error) => {
+      if (generation !== msaLoginGeneration) return;
       msaLoginState.value = { active: false, message: `无法开始微软登录: ${String(error)}` };
       showToast(`微软登录启动失败: ${String(error)}`);
     });
@@ -696,7 +753,14 @@ onUnmounted(() => {
 
 onMounted(async () => {
   animatePageSwitch();
-  if (!(await waitForTauri())) return;
+  if (!(await waitForTauri())) {
+    if (isNativeRuntime) {
+      accounts.value = [];
+      hmclMicrosoftSuggestions.value = [];
+      showToast('启动器桥初始化失败，账户状态不可用');
+    }
+    return;
+  }
   isTauri.value = true;
 
   try {
@@ -732,6 +796,8 @@ onMounted(async () => {
       }
     }, 600);
   } catch (error) {
+    accounts.value = [];
+    hmclMicrosoftSuggestions.value = [];
     showToast(`协议桥初始化失败: ${String(error)}`);
   }
 });
@@ -755,7 +821,7 @@ onMounted(async () => {
         :active-tab="activeTab"
         :is-collapsed="isSidebarCollapsed"
         :plugin-count="plugins.filter((p) => p.enabled).length"
-        :current-account="accounts.find((a) => a.isActive) ?? accounts[0]"
+        :current-account="currentAccount"
         :contributions="pluginContributions"
         @plugin-contribution="runPluginContribution"
         @update:active-tab="activeTab = $event"
@@ -848,7 +914,7 @@ onMounted(async () => {
     <LaunchModal
       :open="isLaunchModalOpen"
       :instance="currentInstance"
-      :account="accounts.find((a) => a.isActive) ?? accounts[0]"
+      :account="currentAccount"
       :task-status="launchTaskStatusState"
       @close="isLaunchModalOpen = false"
     />
@@ -884,9 +950,11 @@ onMounted(async () => {
     <AccountModal
       :open="isAccountModalOpen"
       :accounts="accounts"
-      :current-account="accounts.find((a) => a.isActive) ?? accounts[0]"
+      :current-account="currentAccount"
       :aura-core-active="auraCoreActive"
       :msa-state="msaLoginState"
+      :hmcl-microsoft-suggestions="auraCoreMicrosoftSuggestions"
+      :native-runtime="isNativeRuntime"
       @close="isAccountModalOpen = false"
       @select-account="selectAccount"
       @add-account="addAccount"

@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 use std::process::ExitCode;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use proto::Message;
 use value::Value as BridgeValue;
@@ -63,6 +63,10 @@ struct SharedUiState(Arc<Mutex<UiState>>);
 /// Wrapper managed by Tauri holding the webview readiness signal.
 struct ReadySignal(Sender<()>);
 
+/// Synchronizes webview readiness with arrival of the initial launcher snapshot.
+#[derive(Clone, Default)]
+struct SnapshotReady(Arc<(Mutex<bool>, Condvar)>);
+
 /// Wrapper managed by Tauri holding the shared transport queue sender.
 struct RequestChannel(Sender<Incoming>);
 
@@ -95,8 +99,11 @@ fn main() -> ExitCode {
     }
 
     let state = Arc::new(Mutex::new(UiState::default()));
+    let snapshot_ready = SnapshotReady::default();
+    let notify_snapshot_ready = snapshot_ready.clone();
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
     let page_ready_tx = ready_tx.clone();
+    let page_snapshot_ready = snapshot_ready.clone();
     let (incoming_tx, incoming_rx) = std::sync::mpsc::channel::<Incoming>();
 
     let protocol_state = Arc::clone(&state);
@@ -104,7 +111,13 @@ fn main() -> ExitCode {
     std::thread::spawn(move || {
         // The launcher supervises this child; both protocol termination and
         // `ui.shutdown` must tear the window down instead of orphaning the UI.
-        let code = match run_protocol(ready_rx, incoming_rx, reader_tx, &protocol_state) {
+        let code = match run_protocol(
+            ready_rx,
+            incoming_rx,
+            reader_tx,
+            &protocol_state,
+            &snapshot_ready,
+        ) {
             Ok(()) => 0,
             Err(error) => {
                 eprintln!("aura-ui-provider: {error}");
@@ -117,13 +130,20 @@ fn main() -> ExitCode {
     match tauri::Builder::default()
         .on_page_load(move |_, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                // The native page-load event is the reliable cross-platform readiness
-                // signal; the webview IPC call remains a redundant fallback.
-                let _ = page_ready_tx.send(());
+                // The native page-load event is the reliable cross-platform readiness signal, but it
+                // must not signal the launcher before the initial snapshot is available.
+                let ready_tx = page_ready_tx.clone();
+                let snapshot_ready = page_snapshot_ready.clone();
+                std::thread::spawn(move || {
+                    if let Err(error) = wait_for_snapshot_and_notify(&ready_tx, &snapshot_ready) {
+                        eprintln!("aura-ui-provider: page readiness deferred: {error}");
+                    }
+                });
             }
         })
         .manage(SharedUiState(state))
         .manage(ReadySignal(ready_tx))
+        .manage(notify_snapshot_ready)
         .manage(RequestChannel(incoming_tx))
         .invoke_handler(tauri::generate_handler![
             notify_ready,
@@ -144,11 +164,67 @@ fn main() -> ExitCode {
 
 /// IPC: the webview reports that the Vue application finished mounting.
 #[tauri::command]
-fn notify_ready(ready: tauri::State<ReadySignal>) -> Result<(), String> {
+fn notify_ready(
+    ready: tauri::State<ReadySignal>,
+    snapshot_ready: tauri::State<SnapshotReady>,
+) -> Result<(), String> {
+    wait_for_snapshot_and_notify(&ready.0, &snapshot_ready)
+}
+
+/// Waits for the initial snapshot before signaling the launcher that the webview is ready.
+fn wait_for_snapshot_and_notify(
+    ready: &Sender<()>,
+    snapshot_ready: &SnapshotReady,
+) -> Result<(), String> {
+    let (lock, signal) = &*snapshot_ready.0;
+    let mut stored = lock
+        .lock()
+        .map_err(|_| "the snapshot readiness state is poisoned".to_string())?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !*stored {
+        let now = Instant::now();
+        if now >= deadline {
+            return Err("the initial launcher snapshot was not received".to_string());
+        }
+        let wait = signal
+            .wait_timeout(stored, deadline - now)
+            .map_err(|_| "the snapshot readiness wait failed".to_string())?;
+        stored = wait.0;
+    }
     ready
-        .0
         .send(())
         .map_err(|_| "the protocol thread is no longer running".to_string())
+}
+
+/// Determines whether the initial launcher snapshot was stored successfully.
+///
+/// The bounded interactive-ready fallback is safe only after this becomes true; a timeout before
+/// storage must fail startup instead of signaling an unusable provider to the launcher.
+fn snapshot_is_ready(snapshot_ready: &SnapshotReady) -> bool {
+    let (lock, _) = &*snapshot_ready.0;
+    lock.lock().map(|stored| *stored).unwrap_or(false)
+}
+
+/// Stores one launcher-owned snapshot for immediate webview hydration.
+///
+/// The initial handshake snapshot is retained before readiness so `get_snapshot` cannot race the
+/// later permission-gated `core.snapshot.get` response.
+fn store_snapshot(state: &Mutex<UiState>, snapshot_ready: &SnapshotReady, snapshot: BridgeValue) {
+    let mut guard = match state.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            eprintln!("aura-ui-provider: failed storing the launcher snapshot because state is poisoned");
+            return;
+        }
+    };
+    guard.snapshot = snapshot;
+    drop(guard);
+
+    let (lock, signal) = &*snapshot_ready.0;
+    if let Ok(mut stored) = lock.lock() {
+        *stored = true;
+        signal.notify_all();
+    }
 }
 
 /// IPC: returns the last launcher snapshot as compact JSON.
@@ -252,6 +328,7 @@ fn run_protocol(
     incoming_rx: Receiver<Incoming>,
     reader_tx: Sender<Incoming>,
     state: &Arc<Mutex<UiState>>,
+    snapshot_ready: &SnapshotReady,
 ) -> Result<(), String> {
     // Owned std handles keep the reader half movable into its thread; both
     // types buffer internally, so no explicit BufReader wrapper is needed.
@@ -262,11 +339,12 @@ fn run_protocol(
     proto::validate_hello(&hello)?;
     write_message(&mut output, &proto::result(1, hello))?;
 
-    let replace = expect_request(read_message(&mut input)?, 3, "ui.snapshot.replace")?;
+    let initial_snapshot = expect_request(read_message(&mut input)?, 3, "ui.snapshot.replace")?;
     eprintln!(
         "aura-ui-provider: received the initial launcher snapshot ({} wire bytes)",
-        summarize(&replace)
+        summarize(&initial_snapshot)
     );
+    store_snapshot(state, snapshot_ready, initial_snapshot);
     write_message(&mut output, &proto::result(3, BridgeValue::Null))?;
 
     // Hold `ui.ready` until the webview mounted; the window owns this signal.
@@ -275,7 +353,11 @@ fn run_protocol(
         Err(RecvTimeoutError::Timeout) => {
             // WKWebView and WebKitGTK do not consistently surface page-load events
             // on headless CI. The Tauri event loop has been interactive for the
-            // bounded wait, so use that deterministic readiness fallback.
+            // bounded wait, so use that deterministic readiness fallback only when
+            // the initial snapshot is already available to the webview.
+            if !snapshot_is_ready(snapshot_ready) {
+                return Err("the interactive-ready fallback preceded the initial snapshot".to_string());
+            }
             eprintln!("aura-ui-provider: using the bounded interactive-ready fallback");
         }
         Err(RecvTimeoutError::Disconnected) => {
@@ -297,9 +379,7 @@ fn run_protocol(
                     "aura-ui-provider: launcher state snapshot received ({} bytes of value tree)",
                     summarize(&value)
                 );
-                if let Ok(mut guard) = state.lock() {
-                    guard.snapshot = value;
-                }
+                store_snapshot(state, snapshot_ready, value);
                 break;
             }
             Some(Message::Request { request_id, method, params }) => {
@@ -445,4 +525,42 @@ fn summarize(value: &BridgeValue) -> usize {
 /// Quotes one identifier for the hand-rolled event JSON envelope.
 fn quote(value: &str) -> String {
     BridgeValue::String(value.to_string()).to_json()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{snapshot_is_ready, store_snapshot, wait_for_snapshot_and_notify, SnapshotReady, UiState};
+    use crate::value::Value;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn webview_readiness_waits_for_the_initial_snapshot() {
+        let state = std::sync::Mutex::new(UiState::default());
+        let snapshot_ready = SnapshotReady::default();
+        let (ready_tx, ready_rx) = mpsc::channel::<()>();
+        let waiter_snapshot_ready = snapshot_ready.clone();
+        let waiter = std::thread::spawn(move || {
+            wait_for_snapshot_and_notify(&ready_tx, &waiter_snapshot_ready)
+        });
+
+        // The webview callback can run before the protocol thread consumes the initial snapshot.
+        std::thread::sleep(Duration::from_millis(10));
+        assert!(!waiter.is_finished());
+
+        let snapshot = Value::Map(vec![(
+            "accounts".to_string(),
+            Value::Array(vec![Value::Map(vec![(
+                "username".to_string(),
+                Value::String("AuraPlayer".to_string()),
+            )])]),
+        )]);
+        assert!(!snapshot_is_ready(&SnapshotReady::default()));
+        store_snapshot(&state, &snapshot_ready, snapshot.clone());
+        assert!(snapshot_is_ready(&snapshot_ready));
+
+        waiter.join().expect("readiness waiter").expect("snapshot ready");
+        assert_eq!(snapshot, state.lock().expect("state lock").snapshot);
+        ready_rx.recv_timeout(Duration::from_secs(1)).expect("ready signal");
+    }
 }

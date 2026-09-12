@@ -27,9 +27,11 @@ interface CardTheme {
 const props = defineProps<{
   open: boolean;
   accounts: Account[];
-  currentAccount: Account;
+  currentAccount?: Account;
   auraCoreActive?: boolean;
   msaState?: { active: boolean; verificationUrl?: string; userCode?: string; message: string } | null;
+  hmclMicrosoftSuggestions?: string[];
+  nativeRuntime?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -54,8 +56,8 @@ watch(
   (open) => {
     if (open) {
       mode.value = 'view';
-      const activeIdx = props.accounts.findIndex((a) => a.id === props.currentAccount.id);
-      if (activeIdx !== -1) currentIndex.value = activeIdx;
+      const activeIdx = props.accounts.findIndex((a) => a.id === props.currentAccount?.id);
+      currentIndex.value = activeIdx === -1 ? 0 : activeIdx;
     }
   },
 );
@@ -74,13 +76,15 @@ watch(currentIndex, async () => {
   }
 });
 
-const currentViewingAccount = computed(() => props.accounts[currentIndex.value] || props.accounts[0]);
+const currentViewingAccount = computed<Account | undefined>(() => props.accounts[currentIndex.value] || props.accounts[0]);
 
 function handlePrev() {
+  if (props.accounts.length < 2) return;
   currentIndex.value = currentIndex.value > 0 ? currentIndex.value - 1 : props.accounts.length - 1;
 }
 
 function handleNext() {
+  if (props.accounts.length < 2) return;
   currentIndex.value = currentIndex.value < props.accounts.length - 1 ? currentIndex.value + 1 : 0;
 }
 
@@ -100,7 +104,7 @@ function handleWheel(event: WheelEvent) {
 }
 
 function handleAddOffline() {
-  if (!offlineName.value.trim()) return;
+  if (props.auraCoreActive || !offlineName.value.trim()) return;
 
   const newAcc: Account = {
     id: `acc-${Date.now()}`,
@@ -118,7 +122,7 @@ function handleAddOffline() {
 }
 
 function handleAddThirdParty() {
-  if (!thirdpartyName.value.trim()) return;
+  if (props.auraCoreActive || !thirdpartyName.value.trim()) return;
 
   const newAcc: Account = {
     id: `acc-${Date.now()}`,
@@ -142,9 +146,11 @@ function copyMsaCode() {
 
 function handleMicrosoftLogin() {
   if (props.auraCoreActive) {
+    if (props.msaState?.active) return;
     emit('add-microsoft');
     return;
   }
+  if (props.nativeRuntime) return;
   isAuthorizing.value = true;
   window.setTimeout(() => {
     const newAcc: Account = {
@@ -162,8 +168,16 @@ function handleMicrosoftLogin() {
   }, 1200);
 }
 
+function handleSelectViewing() {
+  if (props.auraCoreActive) return;
+  if (currentViewingAccount.value) emit('select-account', currentViewingAccount.value);
+}
+
 function handleDeleteViewing() {
-  emit('delete-account', currentViewingAccount.value.id);
+  if (props.auraCoreActive) return;
+  const account = currentViewingAccount.value;
+  if (!account) return;
+  emit('delete-account', account.id);
   if (currentIndex.value >= props.accounts.length - 1) {
     currentIndex.value = Math.max(0, props.accounts.length - 2);
   }
@@ -195,8 +209,10 @@ function getCardTheme(account: Account, isCurrent: boolean): CardTheme {
   }
 }
 
-const isCardActive = computed(() => currentViewingAccount.value?.id === props.currentAccount.id);
-const currentTheme = computed(() => getCardTheme(currentViewingAccount.value || props.accounts[0], isCardActive.value));
+const isCardActive = computed(() => currentViewingAccount.value?.id === props.currentAccount?.id);
+const currentTheme = computed(() => (currentViewingAccount.value
+  ? getCardTheme(currentViewingAccount.value, isCardActive.value)
+  : null));
 
 const nextAccount = computed(() =>
   props.accounts.length > 1 ? props.accounts[(currentIndex.value + 1) % props.accounts.length] : null,
@@ -226,9 +242,12 @@ const thirdTheme = computed(() => (thirdAccount.value ? getCardTheme(thirdAccoun
       </div>
 
       <div class="p-6 space-y-5" @wheel="handleWheel">
-        <template v-if="mode === 'view' && currentViewingAccount">
+        <template v-if="mode === 'view'">
           <!-- 层叠卡组与左右导航 -->
-          <div class="relative flex items-center justify-center gap-2 pt-1 pb-3">
+          <div
+            v-if="currentViewingAccount && currentTheme"
+            class="relative flex items-center justify-center gap-2 pt-1 pb-3"
+          >
             <button
               class="w-9 h-9 rounded-full bg-[#24272c] hover:bg-[#2f333a] active:scale-95 text-slate-300 hover:text-white flex items-center justify-center border border-[#373b43] transition-all cursor-pointer shadow-md shrink-0 z-30"
               title="上一个账户 (支持滚轮)"
@@ -254,9 +273,9 @@ const thirdTheme = computed(() => (thirdAccount.value ? getCardTheme(thirdAccoun
 
               <div
                 ref="activeCardRef"
-                class="absolute inset-0 rounded-2xl p-5 border transition-all duration-200 cursor-pointer shadow-2xl flex flex-col justify-between overflow-hidden z-10"
-                :class="[currentTheme.bgGradient, currentTheme.borderColor]"
-                @click="emit('select-account', currentViewingAccount)"
+                class="absolute inset-0 rounded-2xl p-5 border transition-all duration-200 shadow-2xl flex flex-col justify-between overflow-hidden z-10"
+                :class="[currentTheme.bgGradient, currentTheme.borderColor, auraCoreActive ? 'cursor-default' : 'cursor-pointer']"
+                @click="handleSelectViewing"
               >
                 <div class="flex items-start justify-between relative z-10">
                   <div class="flex items-center gap-3">
@@ -288,7 +307,7 @@ const thirdTheme = computed(() => (thirdAccount.value ? getCardTheme(thirdAccoun
                       <Check class="w-3.5 h-3.5" /> 当前使用
                     </span>
                     <button
-                      v-else
+                      v-else-if="!auraCoreActive"
                       class="p-1.5 rounded-md bg-black/30 hover:bg-rose-900/70 text-white/60 hover:text-rose-200 border border-white/15 transition-colors cursor-pointer"
                       title="移除此账户"
                       @click.stop="handleDeleteViewing"
@@ -361,14 +380,23 @@ const thirdTheme = computed(() => (thirdAccount.value ? getCardTheme(thirdAccoun
             </div>
 
             <button
+              v-if="!auraCoreActive"
               class="px-4 py-1.5 rounded-md font-semibold text-xs transition-colors cursor-pointer"
               :class="isCardActive
                 ? 'bg-[#2ea44f] text-white'
                 : 'bg-[#282a2e] hover:bg-[#33363d] text-slate-200 border border-[#3b3e46]'"
-              @click="emit('select-account', currentViewingAccount)"
+              @click="handleSelectViewing"
             >
               {{ isCardActive ? '✓ 当前已选中' : '切换为此账户' }}
             </button>
+          </div>
+
+          <div
+            v-if="!currentViewingAccount || !currentTheme"
+            class="py-10 px-6 rounded-xl bg-[#151619] border border-[#26282e] text-center space-y-2"
+          >
+            <div class="text-sm font-bold text-white">尚无账户</div>
+            <p class="text-xs text-slate-400">添加 Microsoft 账户后即可启动 AuraCore 实例。</p>
           </div>
 
           <!-- 底部三个标准添加账户按钮 -->
@@ -382,7 +410,9 @@ const thirdTheme = computed(() => (thirdAccount.value ? getCardTheme(thirdAccoun
             </button>
 
             <button
-              class="flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-md bg-[#2563eb] hover:bg-[#3b82f6] active:bg-[#1d4ed8] text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+              :disabled="auraCoreActive"
+              :title="auraCoreActive ? 'AuraCore 账户管理尚未开放' : undefined"
+              class="flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-md bg-[#2563eb] hover:bg-[#3b82f6] active:bg-[#1d4ed8] text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               @click="mode = 'add-thirdparty'"
             >
               <Globe class="w-3.5 h-3.5" />
@@ -390,7 +420,9 @@ const thirdTheme = computed(() => (thirdAccount.value ? getCardTheme(thirdAccoun
             </button>
 
             <button
-              class="flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-md bg-[#2a2d33] hover:bg-[#33363d] active:bg-[#222428] text-slate-200 border border-[#3b3e46] text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+              :disabled="auraCoreActive"
+              :title="auraCoreActive ? 'AuraCore 账户管理尚未开放' : undefined"
+              class="flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-md bg-[#2a2d33] hover:bg-[#33363d] active:bg-[#222428] text-slate-200 border border-[#3b3e46] text-xs font-semibold shadow-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               @click="mode = 'add-offline'"
             >
               <User class="w-3.5 h-3.5" />
@@ -408,6 +440,24 @@ const thirdTheme = computed(() => (thirdAccount.value ? getCardTheme(thirdAccoun
             <div class="text-sm font-bold text-white">添加微软账户</div>
             <p class="text-xs text-slate-400 max-w-sm mx-auto">
               使用微软官方 OAuth2 登录协议，安全同步 Minecraft 皮肤与角色数据。
+            </p>
+          </div>
+          <div
+            v-if="auraCoreActive && hmclMicrosoftSuggestions?.length && !msaState?.active"
+            class="max-w-xs mx-auto p-3 rounded-md bg-[#121315] border border-[#24262b] space-y-2 text-left"
+          >
+            <div class="text-[10px] font-semibold text-slate-300">检测到 HMCL Microsoft 账户</div>
+            <ul class="flex flex-wrap gap-1.5">
+              <li
+                v-for="username in hmclMicrosoftSuggestions"
+                :key="username"
+                class="max-w-full truncate px-2 py-1 rounded bg-[#1b1c1d] border border-[#3e3f41] text-[11px] font-mono text-slate-200"
+              >
+                {{ username }}
+              </li>
+            </ul>
+            <p class="text-[10px] leading-relaxed text-slate-500">
+              AuraCore 不会迁移 HMCL 凭据。请在新设备码授权中选择同一微软账户完成登录。
             </p>
           </div>
           <div
@@ -448,9 +498,9 @@ const thirdTheme = computed(() => (thirdAccount.value ? getCardTheme(thirdAccoun
               返回账户列表
             </BedrockButton>
           </div>
-          <div v-else class="pt-2 space-y-2 max-w-xs mx-auto">
+          <div v-if="!auraCoreActive || !msaState?.active" class="pt-2 space-y-2 max-w-xs mx-auto">
             <button
-              :disabled="isAuthorizing"
+              :disabled="isAuthorizing || nativeRuntime"
               class="w-full py-2.5 rounded-md bg-[#2ea44f] hover:bg-[#34b558] text-white font-semibold text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-70"
               @click="handleMicrosoftLogin"
             >
@@ -458,12 +508,21 @@ const thirdTheme = computed(() => (thirdAccount.value ? getCardTheme(thirdAccoun
                 <div class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 <span>正在获取微软授权...</span>
               </template>
+              <template v-else-if="nativeRuntime">
+                <span>请使用 JavaFX 界面添加 HMCL 账户</span>
+              </template>
               <template v-else>
                 <span>前往浏览器授权登录</span>
                 <ExternalLink class="w-3.5 h-3.5" />
               </template>
             </button>
-            <BedrockButton variant="subtle" size="sm" class="w-full" @click="mode = 'view'">
+            <BedrockButton
+              v-if="!auraCoreActive || !msaState"
+              variant="subtle"
+              size="sm"
+              class="w-full"
+              @click="mode = 'view'"
+            >
               返回账户列表
             </BedrockButton>
           </div>
