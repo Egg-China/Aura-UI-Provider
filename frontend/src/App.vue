@@ -257,7 +257,7 @@ function openExportModal(instance: MinecraftInstance) {
   isExportModalOpen.value = true;
 }
 
-function exportInstance(payload: { instance: MinecraftInstance; output: string; name: string }) {
+function exportInstance(payload: { instance: MinecraftInstance; output: string; name: string; whitelist?: string[] }) {
   if (auraCoreActive.value) {
     showToast('MultiMC 导出仅支持 HMCL 核心实例；AuraCore 实例请使用后端导出');
     return;
@@ -267,7 +267,7 @@ function exportInstance(payload: { instance: MinecraftInstance; output: string; 
     return;
   }
   showToast(`正在导出 MultiMC 整合包: ${payload.name}...`);
-  void exportInstanceAsMultiMc(payload.instance.id, payload.output, payload.name)
+  void exportInstanceAsMultiMc(payload.instance.id, payload.output, payload.name, payload.whitelist)
     .then(() => showToast(`整合包导出完成: ${payload.output}`))
     .catch((error) => showToast(`整合包导出失败: ${String(error)}`));
 }

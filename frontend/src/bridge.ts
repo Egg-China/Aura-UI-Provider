@@ -136,13 +136,47 @@ export async function auraCoreCreateInstance(name: string, version: string, grou
     );
 }
 
+/// One selectable instance-tree entry from `core.instance.export.files.list`.
+export interface ExportFileEntry {
+    name: string;
+    path: string;
+    directory: boolean;
+    suggested: boolean;
+}
+
+/// One bounded selection-tree level from `core.instance.export.files.list`.
+export interface ExportFileListing {
+    path: string;
+    entries?: ExportFileEntry[];
+    truncated?: boolean;
+}
+
+/// Lists one export selection-tree level for a launcher-side instance.
+export async function listInstanceExportFiles(id: string, path = ''): Promise<ExportFileListing> {
+    return rejectBackendError(
+        await bridgeRequest<ExportFileListing>('core.instance.export.files.list', { id, path }),
+    );
+}
+
 /// Exports one launcher-side instance as a MultiMC modpack archive.
-export async function exportInstanceAsMultiMc(id: string, output: string, name?: string): Promise<void> {
+///
+/// A provided whitelist must be a non-empty array of exact selection paths; an undefined
+/// whitelist keeps the launcher's full-export semantics.
+export async function exportInstanceAsMultiMc(
+    id: string,
+    output: string,
+    name?: string,
+    whitelist?: string[],
+): Promise<void> {
+    if (whitelist !== undefined && whitelist.length === 0) {
+        throw new Error('Export selection is empty');
+    }
     const reply = rejectBackendError(
         await bridgeRequest<{ exported?: boolean }>('core.instance.export.multimc', {
             id,
             output,
             name: name ?? null,
+            whitelist: whitelist ?? null,
         }),
     );
     if (reply.exported !== true) {
