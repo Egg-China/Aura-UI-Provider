@@ -120,7 +120,9 @@ async function loadChildren(node: TreeNode, markChecked: boolean): Promise<void>
   const promise = (async () => {
     try {
       const listing = await listInstanceExportFiles(instanceId, node.path, token);
-      if (!isExportFileListing(listing) || listing.token !== token) {
+      // A missing token means a legacy backend that cannot echo it; mismatched tokens are stale.
+      if (!isExportFileListing(listing)
+          || (listing.token !== undefined && listing.token !== token)) {
         return;
       }
       if (!(listing.entries ?? []).every(isExportFileEntry)) {
@@ -140,7 +142,7 @@ async function loadChildren(node: TreeNode, markChecked: boolean): Promise<void>
 }
 
 async function toggleExpanded(node: TreeNode): Promise<void> {
-  if (!node.directory || node.loading) {
+  if (!node.directory || node.loading || collecting.value) {
     return;
   }
   if (!node.childrenLoaded) {
@@ -191,6 +193,9 @@ function syncTreeStates(): void {
 }
 
 function toggleChecked(node: TreeNode): void {
+  if (collecting.value) {
+    return;
+  }
   setDescendants(node, !(node.checked || node.indeterminate));
   syncTreeStates();
 }
@@ -289,7 +294,8 @@ watch(
     const token = requestToken;
     listInstanceExportFiles(instance.id, '', token)
         .then((listing) => {
-          if (generation !== requestGeneration || listing.token !== token) {
+          if (generation !== requestGeneration
+              || (listing.token !== undefined && listing.token !== token)) {
             return;
           }
           if (!isExportFileListing(listing)
