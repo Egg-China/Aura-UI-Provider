@@ -147,14 +147,25 @@ export interface ExportFileEntry {
 /// One bounded selection-tree level from `core.instance.export.files.list`.
 export interface ExportFileListing {
     path: string;
+    token?: string;
     entries?: ExportFileEntry[];
     truncated?: boolean;
 }
 
 /// Lists one export selection-tree level for a launcher-side instance.
-export async function listInstanceExportFiles(id: string, path = ''): Promise<ExportFileListing> {
+///
+/// The optional token is echoed by the launcher so stale replies can be detected.
+export async function listInstanceExportFiles(
+    id: string,
+    path = '',
+    token?: string,
+): Promise<ExportFileListing> {
     return rejectBackendError(
-        await bridgeRequest<ExportFileListing>('core.instance.export.files.list', { id, path }),
+        await bridgeRequest<ExportFileListing>('core.instance.export.files.list', {
+            id,
+            path,
+            token: token ?? null,
+        }),
     );
 }
 

@@ -3,7 +3,11 @@ import { computed, ref, watch } from 'vue';
 import { X, Share2, ChevronRight, ChevronDown, Folder, FileText } from 'lucide-vue-next';
 import BedrockButton from './BedrockButton.vue';
 import type { MinecraftInstance } from '../types/launcher';
-import { listInstanceExportFiles, type ExportFileEntry } from '../bridge';
+import {
+    listInstanceExportFiles,
+    type ExportFileEntry,
+    type ExportFileListing,
+} from '../bridge';
 
 interface TreeNode {
   name: string;
@@ -16,6 +20,7 @@ interface TreeNode {
   truncated: boolean;
   childrenLoaded: boolean;
   children: TreeNode[];
+  loadPromise: Promise<void> | null;
 }
 
 interface VisibleNode {
@@ -48,6 +53,11 @@ const selectionNotice = ref('');
 const collecting = ref(false);
 const collectionError = ref('');
 
+/// Monotonic request generation: stale async continuations abort instead of mutating state.
+let requestGeneration = 0;
+/// Token sent to the launcher so stale replies can be identified after reopening.
+let requestToken = '';
+
 const visibleNodes = computed<VisibleNode[]>(() => {
   const flattened: VisibleNode[] = [];
   const walk = (nodes: TreeNode[], depth: number) => {
@@ -64,6 +74,22 @@ const visibleNodes = computed<VisibleNode[]>(() => {
   return flattened;
 });
 
+function isExportFileListing(value: ExportFileListing): boolean {
+  if (typeof value.path !== 'string' || typeof value.truncated !== 'boolean') {
+    return false;
+  }
+  return Array.isArray(value.entries);
+}
+
+function isExportFileEntry(value: ExportFileEntry): boolean {
+  return typeof value.name === 'string'
+      && value.name.length > 0
+      && typeof value.path === 'string'
+      && value.path.length > 0
+      && typeof value.directory === 'boolean'
+      && typeof value.suggested === 'boolean';
+}
+
 function makeNode(entry: ExportFileEntry, checked: boolean): TreeNode {
   return {
     name: entry.name,
@@ -76,26 +102,54 @@ function makeNode(entry: ExportFileEntry, checked: boolean): TreeNode {
     truncated: false,
     childrenLoaded: false,
     children: [],
+    loadPromise: null,
   };
 }
 
 async function loadChildren(node: TreeNode, markChecked: boolean): Promise<void> {
-  if (node.loading || node.childrenLoaded || props.instance === null) return;
-  node.loading = true;
-  try {
-    const listing = await listInstanceExportFiles(props.instance.id, node.path);
-    node.truncated = listing.truncated === true;
-    node.children = (listing.entries ?? []).map((entry) => makeNode(entry, markChecked || entry.suggested));
-    node.childrenLoaded = true;
-  } finally {
-    node.loading = false;
+  if (node.loadPromise !== null) {
+    await node.loadPromise;
+    return;
   }
+  if (node.childrenLoaded || props.instance === null) {
+    return;
+  }
+  const instanceId = props.instance.id;
+  const token = requestToken;
+  node.loading = true;
+  const promise = (async () => {
+    try {
+      const listing = await listInstanceExportFiles(instanceId, node.path, token);
+      if (!isExportFileListing(listing) || listing.token !== token) {
+        return;
+      }
+      if (!(listing.entries ?? []).every(isExportFileEntry)) {
+        throw new Error('malformed export listing');
+      }
+      node.truncated = listing.truncated === true;
+      node.children = (listing.entries ?? [])
+          .map((entry) => makeNode(entry, markChecked || entry.suggested));
+      node.childrenLoaded = true;
+    } finally {
+      node.loading = false;
+      node.loadPromise = null;
+    }
+  })();
+  node.loadPromise = promise;
+  await promise;
 }
 
 async function toggleExpanded(node: TreeNode): Promise<void> {
-  if (!node.directory || node.loading) return;
+  if (!node.directory || node.loading) {
+    return;
+  }
   if (!node.childrenLoaded) {
-    await loadChildren(node, false);
+    try {
+      await loadChildren(node, false);
+    } catch (error) {
+      collectionError.value = `读取目录失败: ${String(error)}`;
+      return;
+    }
   }
   node.expanded = !node.expanded;
 }
@@ -114,7 +168,7 @@ function recomputeTreeStates(nodes: TreeNode[]): { checked: boolean; indetermina
   let checkedCount = 0;
   let indeterminateCount = 0;
   for (const node of nodes) {
-    if (node.childrenLoaded) {
+    if (node.childrenLoaded && node.children.length > 0) {
       const state = recomputeTreeStates(node.children);
       node.indeterminate = state.indeterminate;
       node.checked = state.checked;
@@ -141,35 +195,48 @@ function toggleChecked(node: TreeNode): void {
   syncTreeStates();
 }
 
-async function collectSelection(node: TreeNode, paths: string[]): Promise<void> {
-  if (!node.checked && !node.indeterminate) return;
+async function collectSelection(node: TreeNode, paths: string[], generation: number): Promise<void> {
+  if (!node.checked && !node.indeterminate) {
+    return;
+  }
   if (node.directory && !node.childrenLoaded) {
     await loadChildren(node, true);
+  }
+  if (generation !== requestGeneration) {
+    throw new Error('cancelled');
+  }
+  if (node.directory && node.checked) {
+    // An expansion that raced this collection may have installed suggested-only defaults.
+    setDescendants(node, true);
   }
   if (node.directory && node.checked && node.truncated) {
     throw new Error(`目录条目被截断: ${node.path}`);
   }
   paths.push(node.path);
-  if (node.childrenLoaded) {
-    for (const child of node.children) {
-      await collectSelection(child, paths);
-    }
+  for (const child of node.children) {
+    await collectSelection(child, paths, generation);
   }
 }
 
 async function handleSubmit(): Promise<void> {
-  if (!props.instance || output.value.trim().length === 0 || name.value.trim().length === 0) return;
+  if (!props.instance || output.value.trim().length === 0 || name.value.trim().length === 0) {
+    return;
+  }
   if (mode.value === 'custom') {
     if (root.value === null || !selectionSupported.value) {
       collectionError.value = '当前环境不支持自定义选择';
       return;
     }
+    const generation = requestGeneration;
     collecting.value = true;
     collectionError.value = '';
     try {
       const paths: string[] = [];
       for (const child of root.value.children) {
-        await collectSelection(child, paths);
+        await collectSelection(child, paths, generation);
+      }
+      if (generation !== requestGeneration) {
+        return;
       }
       if (paths.length === 0) {
         collectionError.value = '请至少选择一个要导出的条目';
@@ -182,10 +249,14 @@ async function handleSubmit(): Promise<void> {
         whitelist: paths,
       });
     } catch (error) {
-      collectionError.value = `无法精确导出: ${String(error)}`;
+      if (generation === requestGeneration) {
+        collectionError.value = `无法精确导出: ${String(error)}`;
+      }
       return;
     } finally {
-      collecting.value = false;
+      if (generation === requestGeneration) {
+        collecting.value = false;
+      }
     }
   } else {
     emit('export-instance', {
@@ -200,18 +271,32 @@ async function handleSubmit(): Promise<void> {
 watch(
   () => [props.open, props.instance] as const,
   ([open, instance]) => {
-    if (open && instance) {
-      output.value = `${instance.name}.zip`;
-      name.value = instance.name;
-      mode.value = 'full';
-      root.value = null;
-      rootLoading.value = true;
-      selectionSupported.value = false;
-      selectionNotice.value = '';
-      collectionError.value = '';
-      collecting.value = false;
-      listInstanceExportFiles(instance.id)
+    requestGeneration += 1;
+    requestToken = `export-${requestGeneration}`;
+    if (!open || instance === null) {
+      return;
+    }
+    output.value = `${instance.name}.zip`;
+    name.value = instance.name;
+    mode.value = 'full';
+    root.value = null;
+    rootLoading.value = true;
+    selectionSupported.value = false;
+    selectionNotice.value = '';
+    collectionError.value = '';
+    collecting.value = false;
+    const generation = requestGeneration;
+    const token = requestToken;
+    listInstanceExportFiles(instance.id, '', token)
         .then((listing) => {
+          if (generation !== requestGeneration || listing.token !== token) {
+            return;
+          }
+          if (!isExportFileListing(listing)
+              || !(listing.entries ?? []).every(isExportFileEntry)) {
+            selectionNotice.value = '导出文件列表格式异常，已保持全量导出';
+            return;
+          }
           const rootNode: TreeNode = {
             name: '',
             path: '',
@@ -222,7 +307,9 @@ watch(
             loading: false,
             truncated: listing.truncated === true,
             childrenLoaded: true,
-            children: (listing.entries ?? []).map((entry) => makeNode(entry, entry.suggested)),
+            children: (listing.entries ?? [])
+                .map((entry) => makeNode(entry, entry.suggested)),
+            loadPromise: null,
           };
           root.value = rootNode;
           if (rootNode.truncated) {
@@ -232,12 +319,15 @@ watch(
           selectionSupported.value = true;
         })
         .catch(() => {
-          selectionNotice.value = '当前启动器不支持自定义选择，已保持全量导出';
+          if (generation === requestGeneration) {
+            selectionNotice.value = '当前启动器不支持自定义选择，已保持全量导出';
+          }
         })
         .finally(() => {
-          rootLoading.value = false;
+          if (generation === requestGeneration) {
+            rootLoading.value = false;
+          }
         });
-    }
   },
   { immediate: true },
 );
